@@ -109,12 +109,22 @@ set -eu
 # kubelet) has already created some iptables rules.
 EOF
 
+cat >> "${sbin}/iptables-wrapper" <<EOF
+num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
+chains_created_by_kubelet=":KUBE-MARK-DROP|:KUBE-MARK-MASQ|:KUBE-POSTROUTING"
+kubelet_legacy_chains=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep -E \${chains_created_by_kubelet} | wc -l)
+
+EOF
+
+
 if [ "${need_timeout:-0}" = 0 ]; then
     # Write out the simpler version of legacy-vs-nft detection
     cat >> "${sbin}/iptables-wrapper" <<EOF
-num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
+kubelet_nft_chains=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep -E \${chains_created_by_kubelet} | wc -l)
 num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
-if [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
+if [ "\${kubelet_nft_chains}" -gt "\${kubelet_legacy_chains}" ]; then
+    mode=nft
+elif [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
     mode=legacy
 else
     mode=nft
@@ -127,8 +137,10 @@ else
 # loop if nft is not available so we need to wrap a timeout around it
 # (and to avoid that, we don't even bother calling iptables-nft if it
 # looks like iptables-legacy is going to win).
-num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
-if [ "\${num_legacy_lines}" -ge 10 ]; then
+kubelet_nft_chains=\$( (timeout 5 sh -c "iptables-nft-save; ip6tables-nft-save" || true) 2>/dev/null | grep -E \${chains_created_by_kubelet} | wc -l)
+if [ "\${kubelet_nft_chains}" -gt "\${kubelet_legacy_chains}" ]; then
+    mode=nft
+elif [ "\${num_legacy_lines}" -ge 10 ]; then
     mode=legacy
 else
     num_nft_lines=\$( (timeout 5 sh -c "iptables-nft-save; ip6tables-nft-save" || true) 2>/dev/null | grep '^-' | wc -l)
