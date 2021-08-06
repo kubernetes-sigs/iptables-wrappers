@@ -110,18 +110,24 @@ set -eu
 EOF
 
 cat >> "${sbin}/iptables-wrapper" <<EOF
-num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
-chains_created_by_kubelet=":KUBE-MARK-DROP|:KUBE-MARK-MASQ|:KUBE-POSTROUTING"
-kubelet_legacy_chains=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep -E \${chains_created_by_kubelet} | wc -l)
+tmp_file_legacy=\$(mktemp)
+(iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null > \${tmp_file_legacy}
 
+num_legacy_lines=\$(cat \${tmp_file_legacy} | grep '^-' | wc -l)
+chains_created_by_kubelet=":KUBE-MARK-DROP|:KUBE-MARK-MASQ|:KUBE-POSTROUTING"
+kubelet_legacy_chains=\$(cat \${tmp_file_legacy} | grep -E \${chains_created_by_kubelet} | wc -l)
+rm -f \${tmp_file_legacy}
 EOF
 
 
 if [ "${need_timeout:-0}" = 0 ]; then
     # Write out the simpler version of legacy-vs-nft detection
     cat >> "${sbin}/iptables-wrapper" <<EOF
-kubelet_nft_chains=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep -E \${chains_created_by_kubelet} | wc -l)
-num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
+tmp_file_nft=\$(mktemp)
+(iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null > \${tmp_file_nft}
+kubelet_nft_chains=\$(cat \${tmp_file_nft} | grep -E \${chains_created_by_kubelet} | wc -l)
+num_nft_lines=\$(cat \${tmp_file_nft} | grep '^-' | wc -l)
+rm -f \${tmp_file_nft}
 if [ "\${kubelet_nft_chains}" -gt "\${kubelet_legacy_chains}" ]; then
     mode=nft
 elif [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
@@ -137,19 +143,22 @@ else
 # loop if nft is not available so we need to wrap a timeout around it
 # (and to avoid that, we don't even bother calling iptables-nft if it
 # looks like iptables-legacy is going to win).
-kubelet_nft_chains=\$( (timeout 5 sh -c "iptables-nft-save; ip6tables-nft-save" || true) 2>/dev/null | grep -E \${chains_created_by_kubelet} | wc -l)
+tmp_file_nft=\$(mktemp)
+(timeout 5 sh -c "iptables-nft-save; ip6tables-nft-save" || true) 2>/dev/null > \${tmp_file_nft}
+kubelet_nft_chains=\$(cat \${tmp_file_nft} | grep -E \${chains_created_by_kubelet} | wc -l)
 if [ "\${kubelet_nft_chains}" -gt "\${kubelet_legacy_chains}" ]; then
     mode=nft
 elif [ "\${num_legacy_lines}" -ge 10 ]; then
     mode=legacy
 else
-    num_nft_lines=\$( (timeout 5 sh -c "iptables-nft-save; ip6tables-nft-save" || true) 2>/dev/null | grep '^-' | wc -l)
+    num_nft_lines=\$(cat \${tmp_file_nft} | grep '^-' | wc -l)
     if [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
         mode=legacy
     else
         mode=nft
     fi
 fi
+rm -f \${tmp_file_nft}
 EOF
 fi
 
