@@ -105,7 +105,7 @@ set -eu
 
 num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
 num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
-if [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
+if [ "\${num_legacy_lines}" -gt "\${num_nft_lines}" ]; then
     mode=legacy
 else
     mode=nft
