@@ -105,14 +105,20 @@ if ! build "${tag}" ${build_arg}; then
     FAIL "build failed unexpectedly"
 fi
 
-if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh legacy; then
-    FAIL "failed legacy test"
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh legacy old; then
+    FAIL "failed legacy iptables / old rules test"
 fi
-if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh nft; then
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh legacy new; then
+    FAIL "failed legacy iptables / new rules test"
+fi
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh nft old; then
     if [[ "${nft_fail}" = 1 ]]; then
 	PASS "nft mode failed as expected"
     fi
-    FAIL "failed nft test"
+    FAIL "failed nft iptables / old rules test"
+fi
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh nft new; then
+    FAIL "failed nft iptables / new rules test"
 fi
 
 PASS "success"

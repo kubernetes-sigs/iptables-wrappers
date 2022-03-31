@@ -99,16 +99,34 @@ cat > "${sbin}/iptables-wrapper" <<EOF
 
 set -eu
 
-# Detect whether the base system is using iptables-legacy or
-# iptables-nft. This assumes that some non-containerized process (eg
-# kubelet) has already created some iptables rules.
-
-num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
-num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
-if [ "\${num_legacy_lines}" -gt "\${num_nft_lines}" ]; then
-    mode=legacy
-else
+# In kubernetes 1.17 and later, kubelet will have created at least
+# one chain in the "mangle" table (either "KUBE-IPTABLES-HINT" or
+# "KUBE-KUBELET-CANARY"), so check that first, against
+# iptables-nft, because we can check that more efficiently and
+# it's more common these days.
+nft_kubelet_rules=\$( (iptables-nft-save -t mangle || true; ip6tables-nft-save -t mangle || true) 2>/dev/null | grep -E '^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)' | wc -l)
+if [ "\${nft_kubelet_rules}" -ne 0 ]; then
     mode=nft
+else
+    # Check for kubernetes 1.17-or-later with iptables-legacy. We
+    # can't pass "-t mangle" to iptables-legacy-save because it would
+    # cause the kernel to create that table if it didn't already
+    # exist, which we don't want. So we have to grab all the rules
+    legacy_kubelet_rules=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep -E '^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)' | wc -l)
+    if [ "\${legacy_kubelet_rules}" -ne 0 ]; then
+        mode=legacy
+    else
+        # With older kubernetes releases there may not be any _specific_
+        # rules we can look for, but we assume that some non-containerized process
+        # (possibly kubelet) will have created _some_ iptables rules.
+        num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
+        num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
+        if [ "\${num_legacy_lines}" -gt "\${num_nft_lines}" ]; then
+            mode=legacy
+        else
+            mode=nft
+        fi
+    fi
 fi
 
 EOF
