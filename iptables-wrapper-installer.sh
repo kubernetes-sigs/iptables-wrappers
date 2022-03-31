@@ -64,16 +64,11 @@ if [ "${1:-}" != "--no-sanity-check" ]; then
     fi
 
     case "${version}" in
-    *v1.8.[012]\ *)
-        echo "ERROR: iptables 1.8.0 - 1.8.2 have compatibility bugs." 1>&2
-        echo "       Upgrade to 1.8.3 or newer." 1>&2
+    *v1.8.[0123]\ *)
+        echo "ERROR: iptables 1.8.0 - 1.8.3 have compatibility bugs." 1>&2
+        echo "       Upgrade to 1.8.4 or newer." 1>&2
         exit 1
         ;;
-    *v1.8.3\ *)
-	# 1.8.3 mostly works but can get stuck in an infinite loop if the nft
-	# kernel modules are unavailable
-	need_timeout=1
-	;;
     *)
         # 1.8.4+ are OK
         ;;
@@ -107,11 +102,7 @@ set -eu
 # Detect whether the base system is using iptables-legacy or
 # iptables-nft. This assumes that some non-containerized process (eg
 # kubelet) has already created some iptables rules.
-EOF
 
-if [ "${need_timeout:-0}" = 0 ]; then
-    # Write out the simpler version of legacy-vs-nft detection
-    cat >> "${sbin}/iptables-wrapper" <<EOF
 num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
 num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
 if [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
@@ -119,27 +110,8 @@ if [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
 else
     mode=nft
 fi
+
 EOF
-else
-    # Write out the version of legacy-vs-nft detection with an nft timeout
-    cat >> "${sbin}/iptables-wrapper" <<EOF
-# The iptables-nft binary in this image can get stuck in an infinite
-# loop if nft is not available so we need to wrap a timeout around it
-# (and to avoid that, we don't even bother calling iptables-nft if it
-# looks like iptables-legacy is going to win).
-num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
-if [ "\${num_legacy_lines}" -ge 10 ]; then
-    mode=legacy
-else
-    num_nft_lines=\$( (timeout 5 sh -c "iptables-nft-save; ip6tables-nft-save" || true) 2>/dev/null | grep '^-' | wc -l)
-    if [ "\${num_legacy_lines}" -ge "\${num_nft_lines}" ]; then
-        mode=legacy
-    else
-        mode=nft
-    fi
-fi
-EOF
-fi
 
 # Write out the appropriate alternatives-selection commands
 case "${altstyle}" in
