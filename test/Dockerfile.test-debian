@@ -16,7 +16,7 @@
 
 FROM debian:buster
 
-ARG INSTALL_ARGS
+ARG INSTALL_ARGS=
 ARG REPO=buster
 
 RUN echo deb http://deb.debian.org/debian buster-backports main >> /etc/apt/sources.list; \

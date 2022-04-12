@@ -48,12 +48,12 @@ them not work with kubelet and some other programs. In particular:
     led to kubelet repeatedly creating more and more copies of the
     same rule, thinking it had not been created yet.)
 
-iptables 1.8.3 fixes these compatibility problems, but has a slightly
-different problem, which is that `iptables-nft` will get stuck in an
-infinite loop if it can't load the kernel `nf_tables` module. The
-wrapper script has code to deal with this.
+iptables 1.8.3 fixed these compatibility problems, but had a slightly
+different problem, which is that `iptables-nft` would get stuck in an
+infinite loop if it couldn't load the kernel `nf_tables` module.
 
-All currently-known problems are fixed in iptables 1.8.4.
+iptables 1.8.4 and later have no known problems that affect
+Kubernetes.
 
 ## iptables-wrapper
 
@@ -64,10 +64,8 @@ an `iptables-wrapper` script alongside `iptables-legacy` and
 
 (Because of the known bugs, `iptables-wrapper-installer.sh` will
 refuse to install the wrappers into a container with iptables earlier
-than 1.8.2. If you really know what you're doing you can pass
-`--no-sanity-check` to install anyway. Because it can work around the
-bugs in 1.8.3, the installer will allow you to install with iptables
-1.8.3.)
+than 1.8.4. If you really know what you're doing you can pass
+`--no-sanity-check` to install anyway.)
 
 The first time the wrapper is run, it will figure out which mode the
 system is using, update the `iptables`, `iptables-save`, etc, links to
@@ -79,7 +77,7 @@ directly to the correct underlying binary.
 ## Building a container image that uses iptables
 
 When building a container image that needs to run iptables in the host
-network namespace, install iptables 1.8.3 or later in the container
+network namespace, install iptables 1.8.4 or later in the container
 using whatever tools you normally would. Then copy the
 [`iptables-wrapper-installer.sh`](./iptables-wrapper-installer.sh)
 script into your container, and run it to have it set up run-time
@@ -89,7 +87,9 @@ Some distro-specific examples:
 
 - Alpine Linux
 
-      FROM alpine:3.10
+  Alpine Linux 3.12 and later have iptables >= 1.8.4.
+
+      FROM alpine:3.15
 
       RUN apk add --no-cache iptables
       COPY iptables-wrapper-installer.sh /
@@ -97,7 +97,7 @@ Some distro-specific examples:
 
 - Debian GNU/Linux
 
-  Debian stable (buster) ships iptables 1.8.2, but iptables 1.8.3 is
+  Debian stable (buster) ships iptables 1.8.2, but iptables 1.8.5 is
   available in buster-backports, so you should install it from there:
 
       FROM debian:buster
@@ -111,21 +111,18 @@ Some distro-specific examples:
 
 - Fedora
 
-  Fedora 31 is the first release to include iptables 1.8.3. (Similarly
-  to the Debian example, you might be able to build an image based on
-  Fedora 30 or 29 if you use `dnf --releasever 31 ...` to install the
-  F31 iptables packages.)
+  Fedora 32 and later have iptables >= 1.8.4.
 
-      FROM fedora:31
+      FROM fedora:35
 
-      RUN dnf install -y iptables iptables-nft
+      RUN dnf install -y iptables iptables-legacy iptables-nft
 
       COPY iptables-wrapper-installer.sh /
       RUN /iptables-wrapper-installer.sh
 
-- RHEL / CentOS
+- RHEL / CentOS / UBI
 
-  RHEL/CentOS 7 ship iptables 1.4, which does not support nft mode.
-  RHEL/CentOS 8 ship a hacked version of iptables 1.8 that *only*
-  supports nft mode. Therefore, neither can be used as a basis for a
-  portable iptables-using container image.
+  RHEL 7 ships iptables 1.4, which does not support nft mode. RHEL 8
+  ships a hacked version of iptables 1.8 that *only* supports nft
+  mode. Therefore, neither can be used as a basis for a portable
+  iptables-using container image.

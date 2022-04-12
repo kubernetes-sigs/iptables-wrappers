@@ -17,6 +17,20 @@
 set -eu
 
 mode=$1
+rulestype=$2
+
+case "${mode}" in
+    legacy)
+        wrongmode=nft
+        ;;
+    nft)
+        wrongmode=legacy
+        ;;
+    *)
+        echo "ERROR: bad mode '${mode}'" 1>&2
+        exit 1
+        ;;
+esac
 
 if [ -d /usr/sbin -a -e /usr/sbin/iptables ]; then
     sbin="/usr/sbin"
@@ -56,22 +70,42 @@ ensure_iptables_resolved() {
 
 ensure_iptables_undecided
 
-# Initialize the chosen iptables mode with a subset of kubelet's rules
-iptables-${mode} -t nat -N KUBE-MARK-DROP
-iptables-${mode} -t nat -A KUBE-MARK-DROP -j MARK --set-xmark 0x8000/0x8000
-iptables-${mode} -t filter -N KUBE-FIREWALL
-iptables-${mode} -t filter -A KUBE-FIREWALL -m comment --comment "kubernetes firewall for dropping marked packets" -m mark --mark 0x8000/0x8000 -j DROP
-iptables-${mode} -t filter -I OUTPUT -j KUBE-FIREWALL
-iptables-${mode} -t filter -I INPUT -j KUBE-FIREWALL
+case "${rulestype}" in
+    old)
+        # Initialize the chosen iptables mode with some kubelet-like rules
+        iptables-${mode} -t nat -N KUBE-MARK-DROP
+        iptables-${mode} -t nat -A KUBE-MARK-DROP -j MARK --set-xmark 0x8000/0x8000
+        iptables-${mode} -t filter -N KUBE-FIREWALL
+        iptables-${mode} -t filter -A KUBE-FIREWALL -m comment --comment "kubernetes firewall for dropping marked packets" -m mark --mark 0x8000/0x8000 -j DROP
+        iptables-${mode} -t filter -I OUTPUT -j KUBE-FIREWALL
+        iptables-${mode} -t filter -I INPUT -j KUBE-FIREWALL
+
+        # Fail on iptables 1.8.2 in nft mode
+        if ! iptables-${mode} -C KUBE-FIREWALL -m comment --comment "kubernetes firewall for dropping marked packets" -m mark --mark 0x8000/0x8000 -j DROP; then
+            echo "failed to match previously-added rule; iptables is broken" 1>&2
+            exit 1
+        fi
+        ;;
+
+    new)
+        # Initialize the chosen iptables mode with just a hint chain
+        iptables-${mode} -t mangle -N KUBE-IPTABLES-HINT
+        ;;
+
+    *)
+        echo "ERROR: bad rulestype '${rulestype}'" 1>&2
+        exit 1
+        ;;
+esac
+
+# Put some junk in the other iptables system
+iptables-${wrongmode} -t filter -N BAD-1
+iptables-${wrongmode} -t filter -A BAD-1 -j ACCEPT
+iptables-${wrongmode} -t filter -N BAD-2
+iptables-${wrongmode} -t filter -A BAD-2 -j DROP
 
 ensure_iptables_undecided
 
 iptables -L > /dev/null
 
 ensure_iptables_resolved ${mode}
-
-# Fail on iptables 1.8.2 in nft mode
-if ! iptables -C KUBE-FIREWALL -m comment --comment "kubernetes firewall for dropping marked packets" -m mark --mark 0x8000/0x8000 -j DROP; then
-    echo "failed to match previously-added rule; iptables is broken" 1>&2
-    exit 1
-fi
