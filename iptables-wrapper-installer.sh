@@ -30,6 +30,15 @@
 
 set -eu
 
+iptables_wrapper_path="./iptables-wrapper"
+
+# Verify that the iptables-wrapper bin has been copied alongside the installer script
+if [ ! -f "${iptables_wrapper_path}" ]; then
+    echo "ERROR: iptables-wrapper is not present, expected at ${iptables_wrapper_path}" 1>&2
+    exit 1
+fi
+
+
 # Find iptables binary location
 if [ -d /usr/sbin -a -e /usr/sbin/iptables ]; then
     sbin="/usr/sbin"
@@ -75,102 +84,9 @@ if [ "${1:-}" != "--no-sanity-check" ]; then
     esac
 fi
 
-# Start creating the wrapper...
+# Copy the wrapper.
 rm -f "${sbin}/iptables-wrapper"
-cat > "${sbin}/iptables-wrapper" <<EOF
-#!/bin/sh
-
-# Copyright 2020 The Kubernetes Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# NOTE: This can only use POSIX /bin/sh features; the container image
-# might not contain bash.
-
-set -eu
-
-# In kubernetes 1.17 and later, kubelet will have created at least
-# one chain in the "mangle" table (either "KUBE-IPTABLES-HINT" or
-# "KUBE-KUBELET-CANARY"), so check that first, against
-# iptables-nft, because we can check that more efficiently and
-# it's more common these days.
-nft_kubelet_rules=\$( (iptables-nft-save -t mangle || true; ip6tables-nft-save -t mangle || true) 2>/dev/null | grep -E '^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)' | wc -l)
-if [ "\${nft_kubelet_rules}" -ne 0 ]; then
-    mode=nft
-else
-    # Check for kubernetes 1.17-or-later with iptables-legacy. We
-    # can't pass "-t mangle" to iptables-legacy-save because it would
-    # cause the kernel to create that table if it didn't already
-    # exist, which we don't want. So we have to grab all the rules
-    legacy_kubelet_rules=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep -E '^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)' | wc -l)
-    if [ "\${legacy_kubelet_rules}" -ne 0 ]; then
-        mode=legacy
-    else
-        # With older kubernetes releases there may not be any _specific_
-        # rules we can look for, but we assume that some non-containerized process
-        # (possibly kubelet) will have created _some_ iptables rules.
-        num_legacy_lines=\$( (iptables-legacy-save || true; ip6tables-legacy-save || true) 2>/dev/null | grep '^-' | wc -l)
-        num_nft_lines=\$( (iptables-nft-save || true; ip6tables-nft-save || true) 2>/dev/null | grep '^-' | wc -l)
-        if [ "\${num_legacy_lines}" -gt "\${num_nft_lines}" ]; then
-            mode=legacy
-        else
-            mode=nft
-        fi
-    fi
-fi
-
-EOF
-
-# Write out the appropriate alternatives-selection commands
-case "${altstyle}" in
-    fedora)
-cat >> "${sbin}/iptables-wrapper" <<EOF
-# Update links to point to the selected binaries
-alternatives --set iptables "/usr/sbin/iptables-\${mode}" > /dev/null || failed=1
-EOF
-    ;;
-
-    debian)
-cat >> "${sbin}/iptables-wrapper" <<EOF
-# Update links to point to the selected binaries
-update-alternatives --set iptables "/usr/sbin/iptables-\${mode}" > /dev/null || failed=1
-update-alternatives --set ip6tables "/usr/sbin/ip6tables-\${mode}" > /dev/null || failed=1
-EOF
-    ;;
-
-    *)
-cat >> "${sbin}/iptables-wrapper" <<EOF
-# Update links to point to the selected binaries
-for cmd in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
-    rm -f "${sbin}/\${cmd}"
-    ln -s "${sbin}/xtables-\${mode}-multi" "${sbin}/\${cmd}"
-done 2>/dev/null || failed=1
-EOF
-    ;;
-esac
-
-# Write out the post-alternatives-selection error checking and final wrap-up
-cat >> "${sbin}/iptables-wrapper" <<EOF
-if [ "\${failed:-0}" = 1 ]; then
-    echo "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?)" 1>&2
-    # fake it, though this will probably also fail if they aren't root
-    exec "${sbin}/xtables-\${mode}-multi" "\$0" "\$@"
-fi
-
-# Now re-exec the original command with the newly-selected alternative
-exec "\$0" "\$@"
-EOF
-chmod +x "${sbin}/iptables-wrapper"
+mv "${iptables_wrapper_path}" "${sbin}/iptables-wrapper"
 
 # Now back in the installer script, point the iptables binaries at our
 # wrapper

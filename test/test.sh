@@ -17,7 +17,6 @@
 set -eu
 
 mode=$1
-rulestype=$2
 
 case "${mode}" in
     legacy)
@@ -70,33 +69,8 @@ ensure_iptables_resolved() {
 
 ensure_iptables_undecided
 
-case "${rulestype}" in
-    old)
-        # Initialize the chosen iptables mode with some kubelet-like rules
-        iptables-${mode} -t nat -N KUBE-MARK-DROP
-        iptables-${mode} -t nat -A KUBE-MARK-DROP -j MARK --set-xmark 0x8000/0x8000
-        iptables-${mode} -t filter -N KUBE-FIREWALL
-        iptables-${mode} -t filter -A KUBE-FIREWALL -m comment --comment "kubernetes firewall for dropping marked packets" -m mark --mark 0x8000/0x8000 -j DROP
-        iptables-${mode} -t filter -I OUTPUT -j KUBE-FIREWALL
-        iptables-${mode} -t filter -I INPUT -j KUBE-FIREWALL
-
-        # Fail on iptables 1.8.2 in nft mode
-        if ! iptables-${mode} -C KUBE-FIREWALL -m comment --comment "kubernetes firewall for dropping marked packets" -m mark --mark 0x8000/0x8000 -j DROP; then
-            echo "failed to match previously-added rule; iptables is broken" 1>&2
-            exit 1
-        fi
-        ;;
-
-    new)
-        # Initialize the chosen iptables mode with just a hint chain
-        iptables-${mode} -t mangle -N KUBE-IPTABLES-HINT
-        ;;
-
-    *)
-        echo "ERROR: bad rulestype '${rulestype}'" 1>&2
-        exit 1
-        ;;
-esac
+# Initialize the chosen iptables mode with just a hint chain
+iptables-${mode} -t mangle -N KUBE-IPTABLES-HINT
 
 # Put some junk in the other iptables system
 iptables-${wrongmode} -t filter -N BAD-1
