@@ -18,19 +18,25 @@ fmt: ## Check formatting
     	exit 1; \
 	fi
 
+build-tests: $(BIN_DIR)
+	$(GO) test ./test -c -o $(BIN_DIR)/tests
+
 check: check-debian check-debian-nosanity check-debian-backports check-fedora check-alpine
 
-check-debian: build
+check-debian: build build-tests
 	./test/run-test.sh --build-fail debian
 
-check-debian-nosanity: build
+check-debian-nosanity: build build-tests
 	./test/run-test.sh --build-arg="INSTALL_ARGS=--no-sanity-check" --nft-fail debian-nosanity
 
-check-debian-backports: build
+check-debian-backports: build build-tests
 	./test/run-test.sh --build-arg="REPO=buster-backports" debian-backports
 
-check-fedora: build
+check-fedora: build build-tests
 	./test/run-test.sh fedora
 
-check-alpine: build
+check-alpine: build build-tests
 	./test/run-test.sh alpine
+
+check-distroless: build build-tests
+	./test/run-test.sh distroless

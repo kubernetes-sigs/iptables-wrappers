@@ -1,4 +1,6 @@
-# Copyright 2020 The Kubernetes Authors.
+#!/bin/sh
+
+# Copyright 2022 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +14,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-### Dockerfile for building a Debian buster image for testing
+# USAGE: clean-distroless.sh
 
-FROM debian:buster
+# Modified version of https://github.com/kubernetes/release/blob/master/images/build/distroless-iptables/distroless/clean-distroless.sh
 
-ARG INSTALL_ARGS=
-ARG REPO=buster
+REMOVE="/usr/share/base-files
+/usr/share/man
+/usr/lib/*-linux-gnu/gconv/
+/usr/bin/c_rehash
+/usr/bin/openssl
+/bin/mv
+/bin/chmod
+/bin/grep
+/bin/ln
+/bin/sleep
+/usr/bin/wc
+/iptables-wrapper-installer.sh
+/bin/sh
+/bin/dash
+/clean-distroless.sh
+/bin/rm"
 
-RUN echo deb http://deb.debian.org/debian buster-backports main >> /etc/apt/sources.list; \
-    apt-get update; \
-    apt-get -t ${REPO} -y --no-install-recommends install iptables
+IFS="
+"
 
-COPY iptables-wrapper-installer.sh /
-COPY bin/iptables-wrapper /
-RUN /iptables-wrapper-installer.sh ${INSTALL_ARGS}
-COPY bin/tests /
+for item in ${REMOVE}; do
+    rm -rf "${item}"
+done

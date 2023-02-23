@@ -39,8 +39,8 @@ func DetectBinaryDir() (string, error) {
 type Mode string
 
 const (
-	legacy Mode = "legacy"
-	nft    Mode = "nft"
+	Legacy Mode = "legacy"
+	NFT    Mode = "nft"
 )
 
 // DetectMode inspects the current iptables entries and tries to
@@ -59,12 +59,12 @@ func DetectMode(ctx context.Context, iptables Installation) Mode {
 	rulesOutput := &bytes.Buffer{}
 	_ = iptables.NFTSave(ctx, rulesOutput, "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return nft
+		return NFT
 	}
 	rulesOutput.Reset()
 	_ = iptables.NFTSaveIP6(ctx, rulesOutput, "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return nft
+		return NFT
 	}
 	rulesOutput.Reset()
 
@@ -74,14 +74,14 @@ func DetectMode(ctx context.Context, iptables Installation) Mode {
 	// exist, which we don't want. So we have to grab all the rules.
 	_ = iptables.LegacySave(ctx, rulesOutput)
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return legacy
+		return Legacy
 	}
 	rulesOutput.Reset()
 	_ = iptables.LegacySaveIP6(ctx, rulesOutput)
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return legacy
+		return Legacy
 	}
 
 	// If we can't detect any of the 2 patterns, default to nft.
-	return nft
+	return NFT
 }
