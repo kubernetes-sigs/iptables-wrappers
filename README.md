@@ -8,6 +8,12 @@ modes of iptables 1.8 ("legacy" and "nft") at runtime, so that
 hostNetwork containers that examine or modify iptables rules will work
 correctly regardless of which mode the underlying system is using.
 
+This wrapper is only compatible with Kubernetes 1.17 and newer versions.
+If you need to support older releases, then use the original shell-script
+version of iptables-wrappers, from the `[v2]` tag in this repository.
+
+[v2]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v2
+
 ## Background
 
 As of iptables 1.8, the iptables command line clients come in two
@@ -58,7 +64,7 @@ Kubernetes.
 ## iptables-wrapper
 
 The `iptables-wrapper-installer.sh` script in this repo will install
-an `iptables-wrapper` script alongside `iptables-legacy` and
+an `iptables-wrapper` binary alongside `iptables-legacy` and
 `iptables-nft` in `/usr/sbin` (or `/sbin`), and adjust the symlinks on
 `iptables`, `iptables-save`, etc, to point to the wrapper.
 
@@ -80,8 +86,8 @@ When building a container image that needs to run iptables in the host
 network namespace, install iptables 1.8.4 or later in the container
 using whatever tools you normally would. Then copy the
 [`iptables-wrapper-installer.sh`](./iptables-wrapper-installer.sh)
-script into your container, and run it to have it set up run-time
-autodetection.
+script alongside the compiled `iptables-wrapper` binary into your
+container, and run it to have it set up run-time autodetection.
 
 Some distro-specific examples:
 
@@ -93,6 +99,7 @@ Some distro-specific examples:
 
       RUN apk add --no-cache iptables
       COPY iptables-wrapper-installer.sh /
+      COPY bin/iptables-wrapper /
       RUN /iptables-wrapper-installer.sh
 
 - Debian GNU/Linux
@@ -107,6 +114,7 @@ Some distro-specific examples:
           apt-get -t buster-backports -y --no-install-recommends install iptables
 
       COPY iptables-wrapper-installer.sh /
+      COPY bin/iptables-wrapper /
       RUN /iptables-wrapper-installer.sh
 
 - Fedora
@@ -118,6 +126,7 @@ Some distro-specific examples:
       RUN dnf install -y iptables iptables-legacy iptables-nft
 
       COPY iptables-wrapper-installer.sh /
+      COPY bin/iptables-wrapper /
       RUN /iptables-wrapper-installer.sh
 
 - RHEL / CentOS / UBI

@@ -18,5 +18,6 @@ FROM fedora:35
 
 RUN dnf install -y iptables iptables-legacy iptables-nft
 COPY iptables-wrapper-installer.sh /
+COPY bin/iptables-wrapper /
 RUN /iptables-wrapper-installer.sh
 COPY test/test.sh /

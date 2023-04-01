@@ -24,5 +24,6 @@ RUN echo deb http://deb.debian.org/debian buster-backports main >> /etc/apt/sour
     apt-get -t ${REPO} -y --no-install-recommends install iptables
 
 COPY iptables-wrapper-installer.sh /
+COPY bin/iptables-wrapper /
 RUN /iptables-wrapper-installer.sh ${INSTALL_ARGS}
 COPY test/test.sh /
