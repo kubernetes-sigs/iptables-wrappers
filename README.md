@@ -102,6 +102,15 @@ Some distro-specific examples:
       COPY bin/iptables-wrapper /
       RUN /iptables-wrapper-installer.sh
 
+  Alpine Linux 3.19 and later have legacy iptables as a separate package
+  
+      FROM alpine:3.19
+
+      RUN apk add --no-cache iptables iptables-legacy
+      COPY iptables-wrapper-installer.sh /
+      COPY bin/iptables-wrapper /
+      RUN /iptables-wrapper-installer.sh
+
 - Debian GNU/Linux
 
   Debian stable (buster) ships iptables 1.8.2, but iptables 1.8.5 is
