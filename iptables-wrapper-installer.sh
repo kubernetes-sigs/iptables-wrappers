@@ -24,6 +24,9 @@
 #
 # Unless "--no-sanity-check" is passed, it will first verify that the
 # container already contains a suitable version of iptables.
+#
+# Unless "--no-cleanup" is passed, it will remove this script and
+# iptables-wrapper in the current directory.
 
 # NOTE: This can only use POSIX /bin/sh features; the build container
 # might not contain bash.
@@ -61,7 +64,26 @@ else
     altstyle="none"
 fi
 
-if [ "${1:-}" != "--no-sanity-check" ]; then
+no_sanity_check=""
+no_cleanup=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --no-sanity-check)
+        no_sanity_check=1
+        ;;
+    --no-cleanup)
+        no_cleanup=1
+        ;;
+    *)
+        echo "ERROR: unknown option: $1" 1>&2
+        exit 1
+        ;;
+    esac
+    shift
+done
+
+if [ -z "${no_sanity_check}" ]; then
     # Ensure dependencies are installed
     if ! version=$("${sbin}/iptables-nft" --version 2> /dev/null); then
         echo "ERROR: iptables-nft is not installed" 1>&2
@@ -86,7 +108,7 @@ fi
 
 # Copy the wrapper.
 rm -f "${sbin}/iptables-wrapper"
-mv "${iptables_wrapper_path}" "${sbin}/iptables-wrapper"
+cp "${iptables_wrapper_path}" "${sbin}/iptables-wrapper"
 
 # Now back in the installer script, point the iptables binaries at our
 # wrapper
@@ -121,4 +143,6 @@ case "${altstyle}" in
 esac
 
 # Cleanup
-rm -f "$0"
+if [ -z "${no_cleanup}" ]; then
+    rm -f "$0" "${iptables_wrapper_path}"
+fi
