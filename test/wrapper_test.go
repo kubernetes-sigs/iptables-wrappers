@@ -166,14 +166,17 @@ func (tt iptablesWrapperTest) isIPTablesWrapper(binaryRealPath string) bool {
 }
 
 func (tt iptablesWrapperTest) iptablesRealPath(tb testing.TB) string {
+	tb.Helper()
 	return binaryRealPath(tb, tt.iptablesPath)
 }
 
 func (tt iptablesWrapperTest) ip6tablesRealPath(tb testing.TB) string {
+	tb.Helper()
 	return binaryRealPath(tb, tt.ip6tablesPath)
 }
 
 func binaryRealPath(tb testing.TB, binary string) string {
+	tb.Helper()
 	realPath, err := filepath.EvalSymlinks(binary)
 	assertSuccess(tb, err)
 

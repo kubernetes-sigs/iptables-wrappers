@@ -42,7 +42,7 @@ func BuildAlternativeSelector(sbinPath string) AlternativeSelector {
 		return updateAlternativesSelector{sbinPath: sbinPath}
 	} else {
 		// if we don't find any tool to managed the alternatives, handle it manually with symlinks
-		return symlinkSelector{sbinPath: sbinPath}
+		return NewSymlinker(sbinPath)
 	}
 }
 
@@ -79,17 +79,25 @@ func (a alternativesSelector) UseMode(ctx context.Context, mode Mode) error {
 	return nil
 }
 
-// symlinkSelector  manages an iptables setup by manually creating symlinks
-// that point to the proper "mode" binaries.
+func NewSymlinker(sbinPath string) Symlinker {
+	return Symlinker{sbinPath: sbinPath}
+}
+
+// Symlinker manages an iptables setup by manually creating symlinks
+// for all iptables commands.
 // It configures: `iptables`, `iptables-save`, `iptables-restore`,
 // `ip6tables`, `ip6tables-save` and `ip6tables-restore`.
-type symlinkSelector struct {
+type Symlinker struct {
 	sbinPath string
 }
 
-func (s symlinkSelector) UseMode(ctx context.Context, mode Mode) error {
-	modeStr := string(mode)
-	xtablesForModePath := XtablesPath(s.sbinPath, mode)
+// UseMode configures the system to use the selected iptables mode.
+func (s Symlinker) UseMode(ctx context.Context, mode Mode) error {
+	return s.LinkAll(ctx, XtablesPath(s.sbinPath, mode))
+}
+
+// LinkAll creates symlinks for all iptables commands to the targetPath.
+func (s Symlinker) LinkAll(ctx context.Context, targetPath string) error {
 	cmds := []string{"iptables", "iptables-save", "iptables-restore", "ip6tables", "ip6tables-save", "ip6tables-restore"}
 
 	for _, cmd := range cmds {
@@ -97,8 +105,8 @@ func (s symlinkSelector) UseMode(ctx context.Context, mode Mode) error {
 		// If deleting fails, ignore it and try to create symlink regardless
 		_ = os.RemoveAll(cmdPath)
 
-		if err := os.Symlink(xtablesForModePath, cmdPath); err != nil {
-			return fmt.Errorf("creating %s symlink for mode %s: %v", cmd, modeStr, err)
+		if err := os.Symlink(targetPath, cmdPath); err != nil {
+			return fmt.Errorf("creating %s symlink to %s: %v", cmd, targetPath, err)
 		}
 	}
 

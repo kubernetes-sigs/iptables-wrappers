@@ -49,11 +49,11 @@ get_dependent_packages() {
 main() {
     STAGE_DIR="${1}/"
     mkdir -p "${STAGE_DIR}"/var/lib/dpkg/status.d/
-    apt -y update
+    apt-get -y update
     shift
     while (( "$#" )); do        # While there are arguments still to be shifted
         PACKAGE="${1}"
-        apt -y install "${PACKAGE}"
+        apt-get -y install "${PACKAGE}"
         stage_file_list "${PACKAGE}" "$STAGE_DIR"
         while IFS= read -r c_dep; do
             stage_file_list "${c_dep}" "${STAGE_DIR}"

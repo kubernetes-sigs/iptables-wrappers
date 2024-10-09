@@ -17,7 +17,7 @@
 
 ARG STAGE_DIR="/opt/stage"
 
-FROM debian:bullseye-slim as build
+FROM debian:bullseye-slim AS build
 ARG STAGE_DIR
 
 COPY test/build/stage-binaries-from-package.sh /
@@ -25,36 +25,12 @@ COPY test/build/package-utils.sh /
 COPY test/build/stage-binary-and-deps.sh /
 
 RUN mkdir -p "${STAGE_DIR}" && \
-    /stage-binaries-from-package.sh "${STAGE_DIR}" conntrack \
-    ebtables    \
-    ipset       \
-    iptables    \
-    kmod		&& \
-	`# below binaries and dash are used by iptables-wrapper-installer.sh` \
-    /stage-binary-and-deps.sh "${STAGE_DIR}" /bin/dash \
-    /bin/mv \
-    /bin/chmod \
-    /bin/grep \
-    /bin/ln  \
-    /bin/rm \
-    /bin/sleep \
-    /usr/bin/wc
+    /stage-binaries-from-package.sh "${STAGE_DIR}" iptables
 
-RUN ln -sf /bin/dash "${STAGE_DIR}"/bin/sh
-
-FROM gcr.io/distroless/static as intermediate
+FROM gcr.io/distroless/static
 ARG STAGE_DIR
 
-COPY test/build/clean-distroless.sh /clean-distroless.sh
 COPY --from=build "${STAGE_DIR}" /
-COPY iptables-wrapper-installer.sh /
-COPY bin/iptables-wrapper /
-# iptables-wrapper-installer needs to know that iptables exists before doing all its magic
-RUN echo "" >  /usr/sbin/iptables && \
-	/iptables-wrapper-installer.sh && \
-    /clean-distroless.sh
-
-FROM scratch
-
-COPY --from=intermediate / /
+COPY bin/iptables-wrapper /usr/sbin/iptables-wrapper
+RUN ["/usr/sbin/iptables-wrapper", "install", "/usr/sbin"]
 COPY bin/tests /

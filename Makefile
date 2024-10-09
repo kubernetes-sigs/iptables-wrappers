@@ -21,7 +21,7 @@ fmt: ## Check formatting
 build-tests: $(BIN_DIR)
 	$(GO) test ./test -c -o $(BIN_DIR)/tests
 
-check: check-debian check-debian-nosanity check-debian-backports check-fedora check-alpine
+check: check-debian check-debian-nosanity check-debian-backports check-fedora check-alpine check-distroless
 
 check-debian: build build-tests
 	./test/run-test.sh --build-fail debian

@@ -112,6 +112,8 @@ if ! build "${tag}" ${build_arg}; then
     FAIL "build failed unexpectedly"
 fi
 
+# We execute each test in a separate container to avoid having to cleanup after each test and just start with a clean slate.
+
 if ! docker run --privileged "iptables-wrapper-test-${tag}" /tests -test.v -test.run "^TestIPTablesWrapperLegacy$" ; then
     FAIL "failed legacy iptables"
 fi
