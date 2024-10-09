@@ -16,8 +16,8 @@
 
 FROM alpine:3.15
 
-RUN apk add --no-cache iptables
+RUN apk add --no-cache iptables ip6tables
 COPY iptables-wrapper-installer.sh /
 COPY bin/iptables-wrapper /
 RUN /iptables-wrapper-installer.sh
-COPY test/test.sh /
+COPY bin/tests /

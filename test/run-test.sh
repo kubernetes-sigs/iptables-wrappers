@@ -20,7 +20,6 @@ set -o pipefail
 
 if [[ -n "${DEBUG:-}" ]]; then
     set -x
-    dash_x="-x"
 fi
 
 build_arg=""
@@ -81,11 +80,19 @@ function docker() {
 }
 
 function build() {
+	if [[ -z "${DEBUG:-}" ]]; then
+		quiet="-q"
+	fi
+
+	if [[ -z "${CACHE_BUILDS:-}" ]]; then
+		no_cache="--no-cache"
+	fi
+
     build_tag=iptables-wrapper-test-$1
     dockerfile=Dockerfile.test-${1%%-*}
     shift
 
-    docker build --no-cache -q -t ${build_tag} -f test/${dockerfile} "$@" .
+    docker build ${no_cache:-} ${quiet:-} -t ${build_tag} -f test/${dockerfile} "$@" .
 }
 
 function PASS() {
@@ -105,11 +112,20 @@ if ! build "${tag}" ${build_arg}; then
     FAIL "build failed unexpectedly"
 fi
 
-if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh legacy; then
-    FAIL "failed legacy iptables / new rules test"
+# We execute each test in a separate container to avoid having to cleanup after each test and just start with a clean slate.
+
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /tests -test.v -test.run "^TestIPTablesWrapperLegacy$" ; then
+    FAIL "failed legacy iptables"
 fi
-if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh nft; then
-    FAIL "failed nft iptables / new rules test"
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /tests -test.v -test.run "^TestIPTablesWrapperNFT$" ; then
+    FAIL "failed nft iptables"
+fi
+
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /tests -test.v -test.run "^TestIP6TablesWrapperLegacy$" ; then
+    FAIL "failed legacy ip6tables"
+fi
+if ! docker run --privileged "iptables-wrapper-test-${tag}" /tests -test.v -test.run "^TestIP6TablesWrapperNFT$" ; then
+    FAIL "failed nft ip6tables"
 fi
 
 PASS "success"
