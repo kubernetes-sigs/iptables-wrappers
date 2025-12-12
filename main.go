@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 
 	"github.com/kubernetes-sigs/iptables-wrappers/internal/iptables"
 )
@@ -71,6 +72,7 @@ func main() {
 		// fake it, though this will probably also fail if they aren't root
 		binaryPath = iptables.XtablesPath(sbinPath, mode)
 		args = os.Args
+		args[0] = path.Base(args[0])
 	}
 
 	cmdIPTables := exec.CommandContext(ctx, binaryPath, args...)
