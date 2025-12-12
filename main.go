@@ -39,6 +39,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -68,7 +69,13 @@ func main() {
 
 	selector := iptables.BuildAlternativeSelector(sbinPath)
 	if err := selector.UseMode(ctx, mode); err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
+		// Ignore redirection error if target already exists. This may happen when
+		// multiple iptables-wrappers are racing each other or the filesystem is
+		// mounted read-only.
+		if !errors.Is(err, fs.ErrExist) {
+			fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
+		}
+
 		// fake it, though this will probably also fail if they aren't root
 		binaryPath = iptables.XtablesPath(sbinPath, mode)
 		args = os.Args
