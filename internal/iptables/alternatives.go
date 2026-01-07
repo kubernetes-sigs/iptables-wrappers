@@ -98,7 +98,7 @@ func (s symlinkSelector) UseMode(ctx context.Context, mode Mode) error {
 		_ = os.RemoveAll(cmdPath)
 
 		if err := os.Symlink(xtablesForModePath, cmdPath); err != nil {
-			return fmt.Errorf("creating %s symlink for mode %s: %v", cmd, modeStr, err)
+			return fmt.Errorf("creating %s symlink for mode %s: %w", cmd, modeStr, err)
 		}
 	}
 
