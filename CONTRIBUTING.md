@@ -19,4 +19,4 @@ We have full documentation on how to get started contributing here:
 ## Contact Information
 
 - [sig-network slack channel](https://kubernetes.slack.com/messages/sig-network)
-- [kubernetes-sig-network mailing list](https://groups.google.com/forum/#!forum/kubernetes-sig-network)
+- [kubernetes-sig-network mailing list](https://groups.google.com/a/kubernetes.io/g/sig-network)
