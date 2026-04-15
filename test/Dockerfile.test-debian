@@ -19,7 +19,6 @@ FROM debian:trixie
 ENV DEBIAN_FRONTEND=noninteractive 
 RUN apt-get -y update && apt-get -y --no-install-recommends install iptables
 
-COPY iptables-wrapper-installer.sh /
-COPY bin/iptables-wrapper /
-RUN /iptables-wrapper-installer.sh
+COPY bin/iptables-wrapper /usr/sbin
+RUN /usr/sbin/iptables-wrapper install
 COPY test/test.sh /

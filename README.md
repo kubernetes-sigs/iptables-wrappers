@@ -38,15 +38,12 @@ use that mode yourself. This wrapper is designed to do that for you.
 
 ## iptables-wrapper
 
-The `iptables-wrapper-installer.sh` script in this repo will install
-an `iptables-wrapper` binary alongside `iptables-legacy` and
-`iptables-nft` in `/usr/sbin` (or `/sbin`), and adjust the symlinks on
-`iptables`, `iptables-save`, etc, to point to the wrapper.
-
-(Because of the known bugs, `iptables-wrapper-installer.sh` will
-refuse to install the wrappers into a container with iptables earlier
-than 1.8.4. If you really know what you're doing you can pass
-`--no-sanity-check` to install anyway.)
+The `iptables-wrapper` binary should be installed alongside
+`iptables-legacy` and `iptables-nft` in `/usr/sbin` (or `/sbin`). On
+distros with an "alternatives" system, you can use that to re-point
+the symlinks on `iptables`, `iptables-save`, etc, to point to the
+wrapper. Alternatively, you can run `iptables-wrapper install` to
+install symlinks to the given path.
 
 The first time the wrapper is run, it will figure out which mode the
 system is using, update the `iptables`, `iptables-save`, etc, links to
@@ -58,22 +55,28 @@ directly to the correct underlying binary.
 ## Building a container image that uses iptables
 
 When building a container image that needs to run iptables in the host
-network namespace, install iptables 1.8.4 or later in the container
-using whatever tools you normally would. Then copy the
-[`iptables-wrapper-installer.sh`](./iptables-wrapper-installer.sh)
-script alongside the compiled `iptables-wrapper` binary into your
-container, and run it to have it set up run-time autodetection.
+network namespace, install iptables 1.8.4 or later, both nft and
+legacy versions, in the container, using whatever tools you normally
+would. Then copy the `iptables-wrapper` binary into your container,
+and update the symlinks.
 
-Some distro-specific examples:
+`iptables-wrapper` has no dependencies on anything other than the
+iptables binaries themselves, to help you keep your image as small as
+possible.
+https://github.com/kubernetes/release/blob/master/images/build/distroless-iptables/
+is one example of installing Debian iptables binaries on a
+"distroless" base image.
+
+Some distro-specific installation examples:
 
 - Alpine Linux
 
       FROM alpine:3.23
 
       RUN apk add --no-cache iptables iptables-legacy
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
+
+      COPY bin/iptables-wrapper /usr/sbin
+      RUN /usr/sbin/iptables-wrapper install
 
 - Debian GNU/Linux
 
@@ -81,9 +84,20 @@ Some distro-specific examples:
 
       RUN apt-get -y --no-install-recommends install iptables
 
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
+      COPY bin/iptables-wrapper /usr/sbin
+      RUN update-alternatives \
+            --install /usr/sbin/iptables iptables /usr/sbin/iptables-wrapper 100 \
+            --slave /usr/sbin/iptables-restore iptables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/iptables-save iptables-save /usr/sbin/iptables-wrapper
+      RUN update-alternatives \
+            --install /usr/sbin/ip6tables ip6tables /usr/sbin/iptables-wrapper 100 \
+            --slave /usr/sbin/ip6tables-restore ip6tables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables-save ip6tables-save /usr/sbin/iptables-wrapper
+
+  If you are not going to do any other apt/dpkg operations after
+  installing `iptables-wrapper`, then you can simplify the
+  installation by just doing `/usr/sbin/iptables-wrapper install` as
+  in the Alpine example above rather than using `update-alternatives`.
 
 - Fedora
 
@@ -91,9 +105,19 @@ Some distro-specific examples:
 
       RUN dnf install -y iptables iptables-legacy iptables-nft
 
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
+      COPY bin/iptables-wrapper /usr/sbin
+      RUN alternatives \
+            --install /usr/sbin/iptables iptables /usr/sbin/iptables-wrapper 100 \
+            --slave /usr/sbin/iptables-restore iptables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/iptables-save iptables-save /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables ip6tables /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables-restore ip6tables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables-save ip6tables-save /usr/sbin/iptables-wrapper
+
+  If you are not going to do any other dnf operations after installing
+  `iptables-wrapper`, then you can simplify the installation by just
+  doing `/usr/sbin/iptables-wrapper install` as in the Alpine example
+  above rather than using `alternatives`.
 
 - RHEL / CentOS / UBI
 
