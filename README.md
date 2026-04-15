@@ -1,9 +1,9 @@
 # iptables-wrappers
 
-This repository consists of wrapper scripts to help with using
+This repository consists of wrappers to help with using
 iptables in containers.
 
-Specifically, it provides a wrapper script to select between the two
+Specifically, it provides a wrapper to select between the two
 modes of iptables 1.8 ("legacy" and "nft") at runtime, so that
 hostNetwork containers that examine or modify iptables rules will work
 correctly regardless of which mode the underlying system is using.
