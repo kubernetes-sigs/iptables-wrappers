@@ -31,7 +31,9 @@ case "${mode}" in
         ;;
 esac
 
-if [ -d /usr/sbin -a -e /usr/sbin/iptables ]; then
+if [ -L /usr/sbin -a -e /usr/bin/iptables ]; then
+    sbin="/usr/bin"
+elif [ -d /usr/sbin -a -e /usr/sbin/iptables ]; then
     sbin="/usr/sbin"
 elif [ -d /sbin -a -e /sbin/iptables ]; then
     sbin="/sbin"

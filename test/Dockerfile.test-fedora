@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-### Dockerfile for building a Fedora 35 image for testing
+### Dockerfile for building a Fedora image for testing
 
-FROM fedora:35
+FROM fedora:43
 
 RUN dnf install -y iptables iptables-legacy iptables-nft
 COPY iptables-wrapper-installer.sh /
