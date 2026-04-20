@@ -8,11 +8,31 @@ modes of iptables 1.8 ("legacy" and "nft") at runtime, so that
 hostNetwork containers that examine or modify iptables rules will work
 correctly regardless of which mode the underlying system is using.
 
-This wrapper is only compatible with Kubernetes 1.17 and newer versions.
-If you need to support older releases, then use the original shell-script
-version of iptables-wrappers, from the `[v2]` tag in this repository.
+While there are no actual "releases" of iptables-wrappers, there have
+been three tagged versions (plus an intermediate untagged version that
+was used by some consumers):
 
+  - [v1], 2020-01-12: The original shell-script-based version, which
+    compared the line count of `iptables-legacy-save` and
+    `iptables-nft-save` to guess which version was in use, with a
+    workaround for a bug in iptables 1.8.3. Defaulted to assuming
+    "legacy" if it couldn't determine which was in use.
+
+  - [v2], 2022-04-12: Required iptables 1.8.4 or later, and improved
+    legacy-vs-nft detection in Kubernetes 1.17 and later by looking
+    for specific iptables chains created by kubelet. Also switched
+    the default/fallback guess from "legacy" to "nft".
+
+  - (untagged), 2023-04-01: Rewritten in go, to better support
+    distroless containers. Dropped support for Kubernetes < 1.17. (Not
+    initially tagged as `v3` while we figured out how to update the
+    installer and unit tests, which then got forgotten about.)
+
+  - [v3], 2026-04-20: Official release of the go version.
+
+[v1]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v1
 [v2]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v2
+[v3]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v3
 
 ## Background
 
