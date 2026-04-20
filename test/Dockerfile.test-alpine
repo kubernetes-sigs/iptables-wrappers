@@ -14,10 +14,9 @@
 
 ### Dockerfile for building an Alpine image for testing
 
-FROM alpine:3.15
+FROM alpine:3.23
 
-RUN apk add --no-cache iptables
-COPY iptables-wrapper-installer.sh /
-COPY bin/iptables-wrapper /
-RUN /iptables-wrapper-installer.sh
+RUN apk add --no-cache iptables iptables-legacy
+COPY bin/iptables-wrapper /usr/sbin
+RUN /usr/sbin/iptables-wrapper install
 COPY test/test.sh /

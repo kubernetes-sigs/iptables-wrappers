@@ -1,9 +1,9 @@
 # iptables-wrappers
 
-This repository consists of wrapper scripts to help with using
+This repository consists of wrappers to help with using
 iptables in containers.
 
-Specifically, it provides a wrapper script to select between the two
+Specifically, it provides a wrapper to select between the two
 modes of iptables 1.8 ("legacy" and "nft") at runtime, so that
 hostNetwork containers that examine or modify iptables rules will work
 correctly regardless of which mode the underlying system is using.
@@ -36,42 +36,14 @@ you want that container to be able to work on any host, then you need
 to figure out at run time which mode the host is using, and then also
 use that mode yourself. This wrapper is designed to do that for you.
 
-### Additional iptables-nft 1.8.0-1.8.3 compatibility problems
-
-In addition to the general problem of needing to use the right mode,
-there is a second problem with iptables 1.8, which is that the first
-few releases (1.8.0, 1.8.1, and 1.8.2) had bugs in nft mode that made
-them not work with kubelet and some other programs. In particular:
-
-  - Some commands did not exit with success or failure in exactly the
-    same situations as the legacy clients. Eg, with the legacy
-    clients, `iptables -F CHAIN` would exit with an error if the chain
-    did not exist, but with the nft-based clients up to 1.8.2, it
-    would exit with success.
-
-  - In some cases it was possible to add a rule with `iptables -A` but
-    then have `iptables -C` claim that the rule did not exist. (This
-    led to kubelet repeatedly creating more and more copies of the
-    same rule, thinking it had not been created yet.)
-
-iptables 1.8.3 fixed these compatibility problems, but had a slightly
-different problem, which is that `iptables-nft` would get stuck in an
-infinite loop if it couldn't load the kernel `nf_tables` module.
-
-iptables 1.8.4 and later have no known problems that affect
-Kubernetes.
-
 ## iptables-wrapper
 
-The `iptables-wrapper-installer.sh` script in this repo will install
-an `iptables-wrapper` binary alongside `iptables-legacy` and
-`iptables-nft` in `/usr/sbin` (or `/sbin`), and adjust the symlinks on
-`iptables`, `iptables-save`, etc, to point to the wrapper.
-
-(Because of the known bugs, `iptables-wrapper-installer.sh` will
-refuse to install the wrappers into a container with iptables earlier
-than 1.8.4. If you really know what you're doing you can pass
-`--no-sanity-check` to install anyway.)
+The `iptables-wrapper` binary should be installed alongside
+`iptables-legacy` and `iptables-nft` in `/usr/sbin` (or `/sbin`). On
+distros with an "alternatives" system, you can use that to re-point
+the symlinks on `iptables`, `iptables-save`, etc, to point to the
+wrapper. Alternatively, you can run `iptables-wrapper install` to
+install symlinks to the given path.
 
 The first time the wrapper is run, it will figure out which mode the
 system is using, update the `iptables`, `iptables-save`, etc, links to
@@ -83,64 +55,73 @@ directly to the correct underlying binary.
 ## Building a container image that uses iptables
 
 When building a container image that needs to run iptables in the host
-network namespace, install iptables 1.8.4 or later in the container
-using whatever tools you normally would. Then copy the
-[`iptables-wrapper-installer.sh`](./iptables-wrapper-installer.sh)
-script alongside the compiled `iptables-wrapper` binary into your
-container, and run it to have it set up run-time autodetection.
+network namespace, install iptables 1.8.4 or later, both nft and
+legacy versions, in the container, using whatever tools you normally
+would. Then copy the `iptables-wrapper` binary into your container,
+and update the symlinks.
 
-Some distro-specific examples:
+`iptables-wrapper` has no dependencies on anything other than the
+iptables binaries themselves, to help you keep your image as small as
+possible.
+https://github.com/kubernetes/release/blob/master/images/build/distroless-iptables/
+is one example of installing Debian iptables binaries on a
+"distroless" base image.
+
+Some distro-specific installation examples:
 
 - Alpine Linux
 
-  Alpine Linux 3.12 and later have iptables >= 1.8.4.
-
-      FROM alpine:3.15
-
-      RUN apk add --no-cache iptables
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
-
-  Alpine Linux 3.19 and later have legacy iptables as a separate package
-  
-      FROM alpine:3.19
+      FROM alpine:3.23
 
       RUN apk add --no-cache iptables iptables-legacy
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
+
+      COPY bin/iptables-wrapper /usr/sbin
+      RUN /usr/sbin/iptables-wrapper install
 
 - Debian GNU/Linux
 
-  Debian stable (buster) ships iptables 1.8.2, but iptables 1.8.5 is
-  available in buster-backports, so you should install it from there:
+      FROM debian:trixie
 
-      FROM debian:buster
+      RUN apt-get -y --no-install-recommends install iptables
 
-      RUN echo deb http://deb.debian.org/debian buster-backports main >> /etc/apt/sources.list; \
-          apt-get update; \
-          apt-get -t buster-backports -y --no-install-recommends install iptables
+      COPY bin/iptables-wrapper /usr/sbin
+      RUN update-alternatives \
+            --install /usr/sbin/iptables iptables /usr/sbin/iptables-wrapper 100 \
+            --slave /usr/sbin/iptables-restore iptables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/iptables-save iptables-save /usr/sbin/iptables-wrapper
+      RUN update-alternatives \
+            --install /usr/sbin/ip6tables ip6tables /usr/sbin/iptables-wrapper 100 \
+            --slave /usr/sbin/ip6tables-restore ip6tables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables-save ip6tables-save /usr/sbin/iptables-wrapper
 
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
+  If you are not going to do any other apt/dpkg operations after
+  installing `iptables-wrapper`, then you can simplify the
+  installation by just doing `/usr/sbin/iptables-wrapper install` as
+  in the Alpine example above rather than using `update-alternatives`.
 
 - Fedora
 
-  Fedora 32 and later have iptables >= 1.8.4.
-
-      FROM fedora:35
+      FROM fedora:43
 
       RUN dnf install -y iptables iptables-legacy iptables-nft
 
-      COPY iptables-wrapper-installer.sh /
-      COPY bin/iptables-wrapper /
-      RUN /iptables-wrapper-installer.sh
+      COPY bin/iptables-wrapper /usr/sbin
+      RUN alternatives \
+            --install /usr/sbin/iptables iptables /usr/sbin/iptables-wrapper 100 \
+            --slave /usr/sbin/iptables-restore iptables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/iptables-save iptables-save /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables ip6tables /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables-restore ip6tables-restore /usr/sbin/iptables-wrapper \
+            --slave /usr/sbin/ip6tables-save ip6tables-save /usr/sbin/iptables-wrapper
+
+  If you are not going to do any other dnf operations after installing
+  `iptables-wrapper`, then you can simplify the installation by just
+  doing `/usr/sbin/iptables-wrapper install` as in the Alpine example
+  above rather than using `alternatives`.
 
 - RHEL / CentOS / UBI
 
   RHEL 7 ships iptables 1.4, which does not support nft mode. RHEL 8
-  ships a hacked version of iptables 1.8 that *only* supports nft
-  mode. Therefore, neither can be used as a basis for a portable
-  iptables-using container image.
+  and later ship a hacked version of iptables 1.8 that *only*
+  supports nft mode. Therefore, neither can be used as a basis for a
+  portable iptables-using container image.

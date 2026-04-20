@@ -32,6 +32,11 @@ it will enter an infinite loop, calling itself recursively.
 
 It's important to note that this proxy behavior will only happen on the first iptables-*
 execution. Following invocations will use directly the binaries for the selected mode.
+
+If the command is executed with the `install` argument, it will create symlinks for all
+iptables binaries pointing to itself. It must be invoked by its full path, and it will use
+that path for the iptables binaries as well. This is useful for the installation process
+of the iptables-wrapper itself before first execution.
 */
 package main
 
@@ -41,6 +46,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/kubernetes-sigs/iptables-wrappers/internal/iptables"
 )
@@ -48,10 +54,14 @@ import (
 func main() {
 	ctx := context.Background()
 
+	if len(os.Args) == 2 && os.Args[1] == "install" {
+		install(ctx)
+		return
+	}
+
 	sbinPath, err := iptables.DetectBinaryDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		os.Exit(1)
+		fatal(err)
 	}
 
 	// We use `xtables-<mode>-multi` binaries by default to inspect the installed rules,
@@ -90,4 +100,24 @@ func main() {
 		}
 		os.Exit(code)
 	}
+}
+
+// install creates symlinks for all iptables binaries in the same directory
+// as the current binary being executed.
+func install(ctx context.Context) {
+	wrapperPath, err := os.Executable()
+	if err != nil {
+		fatal(err)
+	}
+	wrapperPath = filepath.Clean(wrapperPath)
+	installDir := filepath.Dir(wrapperPath)
+
+	if err := iptables.NewSymlinker(installDir).LinkAll(ctx, wrapperPath); err != nil {
+		fatal(err)
+	}
+}
+
+func fatal(err error) {
+	fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+	os.Exit(1)
 }

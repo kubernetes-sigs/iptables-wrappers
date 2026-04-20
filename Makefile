@@ -15,19 +15,13 @@ vet: ## Run go vet against code.
 fmt: ## Check formatting
 	if [ "$$(gofmt -e -l . | tee /dev/tty | wc -l)" -gt 0 ]; then \
 		echo "Go files need formatting"; \
-    	exit 1; \
+	exit 1; \
 	fi
 
-check: check-debian check-debian-nosanity check-debian-backports check-fedora check-alpine
+check: check-debian check-fedora check-alpine
 
 check-debian: build
-	./test/run-test.sh --build-fail debian
-
-check-debian-nosanity: build
-	./test/run-test.sh --build-arg="INSTALL_ARGS=--no-sanity-check" --nft-fail debian-nosanity
-
-check-debian-backports: build
-	./test/run-test.sh --build-arg="REPO=buster-backports" debian-backports
+	./test/run-test.sh debian
 
 check-fedora: build
 	./test/run-test.sh fedora
