@@ -27,9 +27,9 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/sets"
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/exec"
+	"k8s.io/utils/set"
 )
 
 // We can't use the normal FakeExec because we don't know precisely how many times the
@@ -40,17 +40,17 @@ import (
 type monitorFakeExec struct {
 	sync.Mutex
 
-	tables map[string]sets.Set[string]
+	tables map[string]set.Set[string]
 
 	block      bool
 	wasBlocked bool
 }
 
 func newMonitorFakeExec() *monitorFakeExec {
-	tables := make(map[string]sets.Set[string])
-	tables["mangle"] = sets.New[string]()
-	tables["filter"] = sets.New[string]()
-	tables["nat"] = sets.New[string]()
+	tables := make(map[string]set.Set[string])
+	tables["mangle"] = set.New[string]()
+	tables["filter"] = set.New[string]()
+	tables["nat"] = set.New[string]()
 	return &monitorFakeExec{tables: tables}
 }
 
