@@ -23,10 +23,10 @@ import (
 
 	"github.com/lithammer/dedent"
 
-	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/set"
 )
 
-func checkChains(t *testing.T, save []byte, expected sets.Set[Chain]) {
+func checkChains(t *testing.T, save []byte, expected set.Set[Chain]) {
 	chains := GetChainsFromTable(save)
 	missing := expected.Difference(chains)
 	if len(missing) != 0 {
@@ -80,7 +80,7 @@ func TestGetChainsFromTable(t *testing.T) {
 		COMMIT
 		`)
 
-	expected := sets.New(
+	expected := set.New(
 		ChainPrerouting,
 		Chain("INPUT"),
 		Chain("OUTPUT"),
