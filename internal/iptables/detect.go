@@ -18,7 +18,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/kubernetes-sigs/iptables-wrappers/internal/files"
+	"sigs.k8s.io/iptables-wrappers/internal/files"
 )
 
 // DetectBinaryDir tries to detect the `iptables` location in

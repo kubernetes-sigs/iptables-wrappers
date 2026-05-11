@@ -48,7 +48,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/kubernetes-sigs/iptables-wrappers/internal/iptables"
+	"sigs.k8s.io/iptables-wrappers/internal/iptables"
 )
 
 func main() {

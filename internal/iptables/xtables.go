@@ -19,7 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/kubernetes-sigs/iptables-wrappers/internal/commands"
+	"sigs.k8s.io/iptables-wrappers/internal/commands"
 )
 
 const (

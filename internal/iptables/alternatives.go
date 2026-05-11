@@ -20,8 +20,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/kubernetes-sigs/iptables-wrappers/internal/commands"
-	"github.com/kubernetes-sigs/iptables-wrappers/internal/files"
+	"sigs.k8s.io/iptables-wrappers/internal/commands"
+	"sigs.k8s.io/iptables-wrappers/internal/files"
 )
 
 // AlternativeSelector allows to configure a system to use iptables in
