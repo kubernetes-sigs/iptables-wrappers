@@ -28,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	utilexec "k8s.io/utils/exec"
@@ -184,15 +183,15 @@ func New(protocol Protocol) Interface {
 	return newInternal(utilexec.New(), protocol)
 }
 
-func newDualStackInternal(exec utilexec.Interface) map[v1.IPFamily]Interface {
-	interfaces := map[v1.IPFamily]Interface{}
+func newDualStackInternal(exec utilexec.Interface) map[Protocol]Interface {
+	interfaces := map[Protocol]Interface{}
 	iptv4 := newInternal(exec, ProtocolIPv4)
 	if presentErr := iptv4.Present(); presentErr == nil {
-		interfaces[v1.IPv4Protocol] = iptv4
+		interfaces[ProtocolIPv4] = iptv4
 	}
 	iptv6 := newInternal(exec, ProtocolIPv6)
 	if presentErr := iptv6.Present(); presentErr == nil {
-		interfaces[v1.IPv6Protocol] = iptv6
+		interfaces[ProtocolIPv6] = iptv6
 	}
 	return interfaces
 }
@@ -202,7 +201,7 @@ func newDualStackInternal(exec utilexec.Interface) map[v1.IPFamily]Interface {
 // supported, then it just returns an empty map. This function is intended to make things
 // simple for callers that just want "best-effort" iptables support, where neither partial
 // nor complete lack of iptables support is considered an error.
-func NewBestEffort() map[v1.IPFamily]Interface {
+func NewBestEffort() map[Protocol]Interface {
 	return newDualStackInternal(utilexec.New())
 }
 

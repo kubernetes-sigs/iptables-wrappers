@@ -25,7 +25,6 @@ import (
 	"strings"
 	"testing"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/exec"
 	fakeexec "k8s.io/utils/exec/testing"
@@ -166,14 +165,14 @@ func TestNewDualStack(t *testing.T) {
 			fexec := fakeExecForCommands(tc.commands)
 			runners := newDualStackInternal(fexec)
 
-			if tc.ipv4 && runners[v1.IPv4Protocol] == nil {
+			if tc.ipv4 && runners[ProtocolIPv4] == nil {
 				t.Errorf("Expected ipv4 runner, got nil")
-			} else if !tc.ipv4 && runners[v1.IPv4Protocol] != nil {
+			} else if !tc.ipv4 && runners[ProtocolIPv4] != nil {
 				t.Errorf("Expected no ipv4 runner, got one")
 			}
-			if tc.ipv6 && runners[v1.IPv6Protocol] == nil {
+			if tc.ipv6 && runners[ProtocolIPv6] == nil {
 				t.Errorf("Expected ipv6 runner, got nil")
-			} else if !tc.ipv6 && runners[v1.IPv6Protocol] != nil {
+			} else if !tc.ipv6 && runners[ProtocolIPv6] != nil {
 				t.Errorf("Expected no ipv6 runner, got one")
 			}
 		})
