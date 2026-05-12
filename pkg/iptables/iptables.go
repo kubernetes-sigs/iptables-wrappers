@@ -34,18 +34,16 @@ import (
 	utiltrace "k8s.io/utils/trace"
 )
 
-// RulePosition holds the -I/-A flags for iptable
-type RulePosition string
-
-const (
-	// Prepend is the insert flag for iptable
-	Prepend RulePosition = "-I"
-	// Append is the append flag for iptable
-	Append RulePosition = "-A"
-)
-
 // Interface is an injectable interface for running iptables commands.  Implementations must be goroutine-safe.
 type Interface interface {
+	// IsIPv6 returns true if this is managing ipv6 tables.
+	IsIPv6() bool
+	// Protocol returns the IP family this instance is managing,
+	Protocol() Protocol
+
+	// Present checks if the kernel supports the iptable interface
+	Present() error
+
 	// EnsureChain checks if the specified chain exists and, if not, creates it.  If the chain existed, return true.
 	EnsureChain(table Table, chain Chain) (bool, error)
 	// FlushChain clears the specified chain.  If the chain did not exist, return error.
@@ -55,14 +53,12 @@ type Interface interface {
 	// ChainExists tests whether the specified chain exists, returning an error if it
 	// does not, or if it is unable to check.
 	ChainExists(table Table, chain Chain) (bool, error)
+
 	// EnsureRule checks if the specified rule is present and, if not, creates it.  If the rule existed, return true.
 	EnsureRule(position RulePosition, table Table, chain Chain, args ...string) (bool, error)
 	// DeleteRule checks if the specified rule is present and, if so, deletes it.
 	DeleteRule(table Table, chain Chain, args ...string) error
-	// IsIPv6 returns true if this is managing ipv6 tables.
-	IsIPv6() bool
-	// Protocol returns the IP family this instance is managing,
-	Protocol() Protocol
+
 	// SaveInto calls `iptables-save` for table and stores result in a given buffer.
 	SaveInto(table Table, buffer *bytes.Buffer) error
 	// Restore runs `iptables-restore` passing data through []byte.
@@ -73,6 +69,7 @@ type Interface interface {
 	Restore(table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error
 	// RestoreAll is the same as Restore except that no table is specified.
 	RestoreAll(data []byte, flush FlushFlag, counters RestoreCountersFlag) error
+
 	// Monitor detects when the given iptables tables have been flushed by an external
 	// tool (e.g. a firewall reload) by creating canary chains and polling to see if
 	// they have been deleted. (Specifically, it polls tables[0] every interval until
@@ -84,10 +81,17 @@ type Interface interface {
 	// a reload) it will log an error and stop monitoring.
 	// (This function should be called from a goroutine.)
 	Monitor(canary Chain, tables []Table, reloadFunc func(), interval time.Duration, stopCh <-chan struct{})
-
-	// Present checks if the kernel supports the iptable interface
-	Present() error
 }
+
+// RulePosition holds the -I/-A flags for iptable
+type RulePosition string
+
+const (
+	// Prepend is the insert flag for iptable
+	Prepend RulePosition = "-I"
+	// Append is the append flag for iptable
+	Append RulePosition = "-A"
+)
 
 // Protocol defines the ip protocol either ipv4 or ipv6
 type Protocol string
@@ -205,6 +209,25 @@ func NewBestEffort() map[Protocol]Interface {
 	return newDualStackInternal(utilexec.New())
 }
 
+// IsIPv6 is part of Interface.
+func (runner *runner) IsIPv6() bool {
+	return runner.protocol == ProtocolIPv6
+}
+
+// Protocol is part of Interface.
+func (runner *runner) Protocol() Protocol {
+	return runner.protocol
+}
+
+// Present tests if iptable is supported on current kernel by checking the existence
+// of default table and chain
+func (runner *runner) Present() error {
+	if _, err := runner.ChainExists(TableNAT, ChainPostrouting); err != nil {
+		return err
+	}
+	return nil
+}
+
 // EnsureChain is part of Interface.
 func (runner *runner) EnsureChain(table Table, chain Chain) (bool, error) {
 	fullArgs := makeFullArgs(table, chain)
@@ -243,6 +266,20 @@ func (runner *runner) DeleteChain(table Table, chain Chain) error {
 	return nil
 }
 
+// ChainExists is part of Interface
+func (runner *runner) ChainExists(table Table, chain Chain) (bool, error) {
+	fullArgs := makeFullArgs(table, chain)
+
+	trace := utiltrace.New("iptables ChainExists")
+	defer trace.LogIfLong(2 * time.Second)
+
+	out, err := runner.run(opListChain, fullArgs)
+	if err != nil {
+		return false, fmt.Errorf("error listing chain %q in table %q: %w: %s", chain, table, err, out)
+	}
+	return true, nil
+}
+
 // EnsureRule is part of Interface.
 func (runner *runner) EnsureRule(position RulePosition, table Table, chain Chain, args ...string) (bool, error) {
 	fullArgs := makeFullArgs(table, chain, args...)
@@ -277,14 +314,6 @@ func (runner *runner) DeleteRule(table Table, chain Chain, args ...string) error
 		return fmt.Errorf("error deleting rule: %w: %s", err, out)
 	}
 	return nil
-}
-
-func (runner *runner) IsIPv6() bool {
-	return runner.protocol == ProtocolIPv6
-}
-
-func (runner *runner) Protocol() Protocol {
-	return runner.protocol
 }
 
 // SaveInto is part of Interface.
@@ -410,20 +439,6 @@ func (runner *runner) checkRule(args []string) (bool, error) {
 	return false, fmt.Errorf("error checking rule: %w: %s", err, out)
 }
 
-// ChainExists is part of Interface
-func (runner *runner) ChainExists(table Table, chain Chain) (bool, error) {
-	fullArgs := makeFullArgs(table, chain)
-
-	trace := utiltrace.New("iptables ChainExists")
-	defer trace.LogIfLong(2 * time.Second)
-
-	out, err := runner.run(opListChain, fullArgs)
-	if err != nil {
-		return false, fmt.Errorf("error listing chain %q in table %q: %w: %s", chain, table, err, out)
-	}
-	return true, nil
-}
-
 type operation string
 
 const (
@@ -437,15 +452,6 @@ const (
 
 func makeFullArgs(table Table, chain Chain, args ...string) []string {
 	return append([]string{string(chain), "-t", string(table)}, args...)
-}
-
-// Present tests if iptable is supported on current kernel by checking the existence
-// of default table and chain
-func (runner *runner) Present() error {
-	if _, err := runner.ChainExists(TableNAT, ChainPostrouting); err != nil {
-		return err
-	}
-	return nil
 }
 
 var iptablesNotFoundStrings = []string{
