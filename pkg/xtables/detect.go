@@ -14,11 +14,11 @@ limitations under the License.
 package xtables
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"errors"
 	"path/filepath"
-	"regexp"
+	"strings"
 
 	utilexec "k8s.io/utils/exec"
 )
@@ -48,29 +48,21 @@ func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string)
 	// "KUBE-KUBELET-CANARY"), so check that first, against
 	// iptables-nft, because we can check that more efficiently and
 	// it's more common these days.
-	rulesOutput := &bytes.Buffer{}
-	doExec(ctx, execer, rulesOutput, filepath.Join(sbinPath, "iptables-nft-save"), "-t", "mangle")
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-nft-save", "-t", "mangle") {
 		return NFTMode
 	}
-	rulesOutput.Reset()
-	doExec(ctx, execer, rulesOutput, filepath.Join(sbinPath, "ip6tables-nft-save"), "-t", "mangle")
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-nft-save", "-t", "mangle") {
 		return NFTMode
 	}
-	rulesOutput.Reset()
 
 	// Check for kubernetes 1.17-or-later with iptables-legacy. We
 	// can't pass "-t mangle" to iptables-legacy-save because it would
 	// cause the kernel to create that table if it didn't already
 	// exist, which we don't want. So we have to grab all the rules.
-	doExec(ctx, execer, rulesOutput, filepath.Join(sbinPath, "iptables-legacy-save"))
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-legacy-save") {
 		return LegacyMode
 	}
-	rulesOutput.Reset()
-	doExec(ctx, execer, rulesOutput, filepath.Join(sbinPath, "ip6tables-legacy-save"))
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-legacy-save") {
 		return LegacyMode
 	}
 
@@ -78,16 +70,27 @@ func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string)
 	return NFTMode
 }
 
-func doExec(ctx context.Context, execer utilexec.Interface, out *bytes.Buffer, command string, args ...string) {
-	c := execer.CommandContext(ctx, command, args...)
-	c.SetStdout(out)
-	_ = c.Run()
-}
-
-var kubeletChainsRegex = regexp.MustCompile(`(?m)^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)`)
-
-// hasKubeletChains checks if the output of an iptables*-save command
-// contains any of the rules set by kubelet.
-func hasKubeletChains(output []byte) bool {
-	return kubeletChainsRegex.Match(output)
+// Especially on a restart, there may already be lots of iptables rules, so rather than
+// using CombinedOutput() or something simple like that that might end up using a lot of
+// memory, we stream the command output, only keeping a line at a time, and stop as soon
+// as we find a match.
+func execAndScanForKubeletChains(ctx context.Context, execer utilexec.Interface, sbinPath, command string, args ...string) bool {
+	cmd := execer.CommandContext(ctx, filepath.Join(sbinPath, command), args...)
+	stdout, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, ":KUBE-IPTABLES-HINT ") ||
+			strings.HasPrefix(line, ":KUBE-KUBELET-CANARY ") {
+			// SIGPIPE the iptables process
+			_ = stdout.Close()
+			_ = cmd.Wait()
+			return true
+		}
+	}
+	_ = cmd.Wait()
+	return false
 }
