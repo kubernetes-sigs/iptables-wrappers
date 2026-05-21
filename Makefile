@@ -18,7 +18,10 @@ verify:
 update:
 	./hack/update.sh
 
-check: check-debian check-fedora check-alpine
+check: check-unit check-debian check-fedora check-alpine
+
+check-unit:
+	$(GO) test -count=1 ./...
 
 check-debian: build
 	./test/run-test.sh debian
