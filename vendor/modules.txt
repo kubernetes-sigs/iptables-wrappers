@@ -1,0 +1,3 @@
+# k8s.io/utils v0.0.0-20260626114624-be93311217bd
+## explicit; go 1.23
+k8s.io/utils/exec

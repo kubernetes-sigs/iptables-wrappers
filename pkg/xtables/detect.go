@@ -17,17 +17,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os/exec"
 	"path/filepath"
 	"regexp"
+
+	utilexec "k8s.io/utils/exec"
 )
 
 // DetectBinaryDir tries to detect the `iptables` location in
 // either /usr/sbin or /sbin. If it's not there, it returns an error.
-func DetectBinaryDir() (string, error) {
-	if path, _ := exec.LookPath("/usr/sbin/iptables"); path != "" {
+func DetectBinaryDir(execer utilexec.Interface) (string, error) {
+	if path, _ := execer.LookPath("/usr/sbin/iptables"); path != "" {
 		return "/usr/sbin", nil
-	} else if path, _ := exec.LookPath("/sbin/iptables"); path != "" {
+	} else if path, _ := execer.LookPath("/sbin/iptables"); path != "" {
 		return "/sbin", nil
 	} else {
 		return "", errors.New("iptables is not present in either /usr/sbin or /sbin")
@@ -41,7 +42,7 @@ const (
 
 // DetectMode inspects the current iptables entries and tries to
 // guess which iptables mode is being used: legacy or nft
-func DetectMode(ctx context.Context, sbinPath string) Mode {
+func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string) Mode {
 	nftBinary := filepath.Join(sbinPath, xtablesNFTMultiBinaryName)
 	legacyBinary := filepath.Join(sbinPath, xtablesLegacyMultiBinaryName)
 
@@ -56,12 +57,12 @@ func DetectMode(ctx context.Context, sbinPath string) Mode {
 	// iptables-nft, because we can check that more efficiently and
 	// it's more common these days.
 	rulesOutput := &bytes.Buffer{}
-	doExec(ctx, rulesOutput, nftBinary, "iptables-save", "-t", "mangle")
+	doExec(ctx, execer, rulesOutput, nftBinary, "iptables-save", "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return NFTMode
 	}
 	rulesOutput.Reset()
-	doExec(ctx, rulesOutput, nftBinary, "ip6tables-save", "-t", "mangle")
+	doExec(ctx, execer, rulesOutput, nftBinary, "ip6tables-save", "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return NFTMode
 	}
@@ -71,12 +72,12 @@ func DetectMode(ctx context.Context, sbinPath string) Mode {
 	// can't pass "-t mangle" to iptables-legacy-save because it would
 	// cause the kernel to create that table if it didn't already
 	// exist, which we don't want. So we have to grab all the rules.
-	doExec(ctx, rulesOutput, legacyBinary, "iptables-save")
+	doExec(ctx, execer, rulesOutput, legacyBinary, "iptables-save")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return LegacyMode
 	}
 	rulesOutput.Reset()
-	doExec(ctx, rulesOutput, legacyBinary, "ip6tables-save")
+	doExec(ctx, execer, rulesOutput, legacyBinary, "ip6tables-save")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return LegacyMode
 	}
@@ -85,13 +86,13 @@ func DetectMode(ctx context.Context, sbinPath string) Mode {
 	return NFTMode
 }
 
-func doExec(ctx context.Context, out *bytes.Buffer, multiBinary, command string, args ...string) {
+func doExec(ctx context.Context, execer utilexec.Interface, out *bytes.Buffer, multiBinary, command string, args ...string) {
 	allArgs := make([]string, 0, len(args)+1)
 	allArgs = append(allArgs, command)
 	allArgs = append(allArgs, args...)
 
-	c := exec.CommandContext(ctx, multiBinary, allArgs...)
-	c.Stdout = out
+	c := execer.CommandContext(ctx, multiBinary, allArgs...)
+	c.SetStdout(out)
 	_ = c.Run()
 }
 
