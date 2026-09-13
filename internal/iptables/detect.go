@@ -19,16 +19,14 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
-
-	"sigs.k8s.io/iptables-wrappers/internal/files"
 )
 
 // DetectBinaryDir tries to detect the `iptables` location in
 // either /usr/sbin or /sbin. If it's not there, it returns an error.
 func DetectBinaryDir() (string, error) {
-	if files.ExecutableExists("/usr/sbin/iptables") {
+	if path, _ := exec.LookPath("/usr/sbin/iptables"); path != "" {
 		return "/usr/sbin", nil
-	} else if files.ExecutableExists("/sbin/iptables") {
+	} else if path, _ := exec.LookPath("/sbin/iptables"); path != "" {
 		return "/sbin", nil
 	} else {
 		return "", errors.New("iptables is not present in either /usr/sbin or /sbin")

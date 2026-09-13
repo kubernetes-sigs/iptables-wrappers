@@ -19,28 +19,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"sigs.k8s.io/iptables-wrappers/internal/commands"
-	"sigs.k8s.io/iptables-wrappers/internal/files"
 )
 
 // SetIPTablesAlternative updates the system to use the given iptables mode
 func SetIPTablesAlternative(ctx context.Context, mode Mode, sbinPath string) error {
 	modeStr := string(mode)
 
-	if files.ExecutableExists(filepath.Join(sbinPath, "alternatives")) {
+	if path, _ := exec.LookPath(filepath.Join(sbinPath, "alternatives")); path != "" {
 		// Fedora-style "alternatives".
-		if err := commands.RunAndReadError(exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+string(mode)))); err != nil {
-			return fmt.Errorf("alternatives to update iptables to mode %s: %v", string(mode), err)
+		if out, err := exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr)).CombinedOutput(); err != nil {
+			return fmt.Errorf("alternatives to update iptables to mode %s: %w: %s", string(mode), err, out)
 		}
 		return nil
-	} else if files.ExecutableExists(filepath.Join(sbinPath, "update-alternatives")) {
+	} else if path, _ := exec.LookPath(filepath.Join(sbinPath, "update-alternatives")); path != "" {
 		// Debian-style "update-alternatives".
-		if err := commands.RunAndReadError(exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr))); err != nil {
-			return fmt.Errorf("update-alternatives iptables to mode %s: %v", modeStr, err)
+		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr)).CombinedOutput(); err != nil {
+			return fmt.Errorf("update-alternatives iptables to mode %s: %w: %s", modeStr, err, out)
 		}
-		if err := commands.RunAndReadError(exec.CommandContext(ctx, "update-alternatives", "--set", "ip6tables", filepath.Join(sbinPath, "ip6tables-"+modeStr))); err != nil {
-			return fmt.Errorf("update-alternatives ip6tables to mode %s: %v", modeStr, err)
+		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "ip6tables", filepath.Join(sbinPath, "ip6tables-"+modeStr)).CombinedOutput(); err != nil {
+			return fmt.Errorf("update-alternatives ip6tables to mode %s: %w: %s", modeStr, err, out)
 		}
 		return nil
 	} else {
