@@ -79,6 +79,15 @@ func fakeExecForCommands(commands []testCommand) *fakeexec.FakeExec {
 	fexec := &fakeexec.FakeExec{
 		CommandScript: make([]fakeexec.FakeCommandAction, len(commands)),
 		ExactOrder:    true,
+		LookPathFunc: func(cmd string) (string, error) {
+			if strings.HasPrefix(cmd, "/sbin/") {
+				return cmd, nil
+			} else if strings.Contains(cmd, "/") {
+				return "", fmt.Errorf("%q: not found", cmd)
+			} else {
+				return "/sbin/" + cmd, nil
+			}
+		},
 	}
 	for i := range commands {
 		fcmd := fakeexec.FakeCmd{
