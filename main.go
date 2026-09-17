@@ -75,8 +75,7 @@ func main() {
 		args = os.Args[1:]
 	}
 
-	selector := iptables.BuildAlternativeSelector(sbinPath)
-	if err := selector.UseMode(ctx, mode); err != nil {
+	if err := iptables.SetIPTablesAlternative(ctx, mode, sbinPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
 		// fake it, though this will probably also fail if they aren't root
 		binaryPath = iptables.XtablesPath(sbinPath, mode)
@@ -112,7 +111,7 @@ func install(ctx context.Context) {
 	wrapperPath = filepath.Clean(wrapperPath)
 	installDir := filepath.Dir(wrapperPath)
 
-	if err := iptables.NewSymlinker(installDir).LinkAll(ctx, wrapperPath); err != nil {
+	if err := iptables.LinkAll(ctx, installDir, iptables.IPTablesBinaries, wrapperPath); err != nil {
 		fatal(err)
 	}
 }

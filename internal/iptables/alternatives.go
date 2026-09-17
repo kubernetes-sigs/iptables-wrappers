@@ -24,87 +24,40 @@ import (
 	"sigs.k8s.io/iptables-wrappers/internal/files"
 )
 
-// AlternativeSelector allows to configure a system to use iptables in
-// nft or legacy mode.
-type AlternativeSelector interface {
-	// UseMode configures the system to use the selected iptables mode.
-	UseMode(ctx context.Context, mode Mode) error
-}
-
-// BuildAlternativeSelector builds the proper iptablesAlternativeSelector depending
-// on the machine's setup. It will use either `alternatives` or `update-alternatives` if present
-// in the sbin folder. If none is present, it will manage iptables binaries by manually
-// creating symlinks.
-func BuildAlternativeSelector(sbinPath string) AlternativeSelector {
-	if files.ExecutableExists(filepath.Join(sbinPath, "alternatives")) {
-		return alternativesSelector{sbinPath: sbinPath}
-	} else if files.ExecutableExists(filepath.Join(sbinPath, "update-alternatives")) {
-		return updateAlternativesSelector{sbinPath: sbinPath}
-	} else {
-		// if we don't find any tool to managed the alternatives, handle it manually with symlinks
-		return NewSymlinker(sbinPath)
-	}
-}
-
-// updateAlternativesSelector manages an iptables setup by using the `update-alternatives` binary.
-// This is most common for debian based OSs.
-type updateAlternativesSelector struct {
-	sbinPath string
-}
-
-func (u updateAlternativesSelector) UseMode(ctx context.Context, mode Mode) error {
+// SetIPTablesAlternative updates the system to use the given iptables mode
+func SetIPTablesAlternative(ctx context.Context, mode Mode, sbinPath string) error {
 	modeStr := string(mode)
 
-	if err := commands.RunAndReadError(exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(u.sbinPath, "iptables-"+modeStr))); err != nil {
-		return fmt.Errorf("update-alternatives iptables to mode %s: %v", modeStr, err)
+	if files.ExecutableExists(filepath.Join(sbinPath, "alternatives")) {
+		// Fedora-style "alternatives".
+		if err := commands.RunAndReadError(exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+string(mode)))); err != nil {
+			return fmt.Errorf("alternatives to update iptables to mode %s: %v", string(mode), err)
+		}
+		return nil
+	} else if files.ExecutableExists(filepath.Join(sbinPath, "update-alternatives")) {
+		// Debian-style "update-alternatives".
+		if err := commands.RunAndReadError(exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr))); err != nil {
+			return fmt.Errorf("update-alternatives iptables to mode %s: %v", modeStr, err)
+		}
+		if err := commands.RunAndReadError(exec.CommandContext(ctx, "update-alternatives", "--set", "ip6tables", filepath.Join(sbinPath, "ip6tables-"+modeStr))); err != nil {
+			return fmt.Errorf("update-alternatives ip6tables to mode %s: %v", modeStr, err)
+		}
+		return nil
+	} else {
+		// If we don't find any tool to manage alternatives, handle it manually with symlinks.
+		return LinkAll(ctx, sbinPath, IPTablesBinaries, XtablesPath(sbinPath, mode))
 	}
-
-	if err := commands.RunAndReadError(exec.CommandContext(ctx, "update-alternatives", "--set", "ip6tables", filepath.Join(u.sbinPath, "ip6tables-"+modeStr))); err != nil {
-		return fmt.Errorf("update-alternatives ip6tables to mode %s: %v", modeStr, err)
-	}
-
-	return nil
 }
 
-// alternativesSelector manages an iptables setup by using the `alternatives` binary.
-// This is most common for fedora based OSs.
-type alternativesSelector struct {
-	sbinPath string
-}
-
-func (a alternativesSelector) UseMode(ctx context.Context, mode Mode) error {
-	if err := commands.RunAndReadError(exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(a.sbinPath, "iptables-"+string(mode)))); err != nil {
-		return fmt.Errorf("alternatives to update iptables to mode %s: %v", string(mode), err)
-	}
-	return nil
-}
-
-func NewSymlinker(sbinPath string) Symlinker {
-	return Symlinker{sbinPath: sbinPath}
-}
-
-// Symlinker manages an iptables setup by manually creating symlinks
-// for all iptables commands.
-// It configures: `iptables`, `iptables-save`, `iptables-restore`,
-// `ip6tables`, `ip6tables-save` and `ip6tables-restore`.
-type Symlinker struct {
-	sbinPath string
-}
-
-// UseMode configures the system to use the selected iptables mode.
-func (s Symlinker) UseMode(ctx context.Context, mode Mode) error {
-	return s.LinkAll(ctx, XtablesPath(s.sbinPath, mode))
-}
-
-// LinkAll creates symlinks for all iptables commands to the targetPath.
-func (s Symlinker) LinkAll(ctx context.Context, targetPath string) error {
-	for _, cmd := range IPTablesBinaries {
-		cmdPath := filepath.Join(s.sbinPath, cmd)
+// LinkAll creates symlinks from each element of linknames in binaryPath, to targetBinary.
+func LinkAll(ctx context.Context, binaryPath string, linknames []string, targetBinary string) error {
+	for _, cmd := range linknames {
+		cmdPath := filepath.Join(binaryPath, cmd)
 		// If deleting fails, ignore it and try to create symlink regardless
 		_ = os.RemoveAll(cmdPath)
 
-		if err := os.Symlink(targetPath, cmdPath); err != nil {
-			return fmt.Errorf("creating %s symlink to %s: %v", cmd, targetPath, err)
+		if err := os.Symlink(targetBinary, cmdPath); err != nil {
+			return fmt.Errorf("creating %s symlink to %s: %v", cmd, targetBinary, err)
 		}
 	}
 
