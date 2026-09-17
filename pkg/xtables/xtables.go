@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package iptables
+package xtables
 
 import (
 	"path/filepath"
@@ -37,7 +37,7 @@ var IPTablesBinaries = []string{
 	"ip6tables-restore",
 }
 
-// XtablesPath returns the path to the `xtables-<mode>-multi` binary
-func XtablesPath(sbinPath string, mode Mode) string {
+// MultiBinaryPath returns the path to the `xtables-<mode>-multi` binary
+func MultiBinaryPath(sbinPath string, mode Mode) string {
 	return filepath.Join(sbinPath, "xtables-"+string(mode)+"-multi")
 }

@@ -48,7 +48,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"sigs.k8s.io/iptables-wrappers/internal/iptables"
+	"sigs.k8s.io/iptables-wrappers/pkg/xtables"
 )
 
 func main() {
@@ -59,14 +59,14 @@ func main() {
 		return
 	}
 
-	sbinPath, err := iptables.DetectBinaryDir()
+	sbinPath, err := xtables.DetectBinaryDir()
 	if err != nil {
 		fatal(err)
 	}
 
 	// We use `xtables-<mode>-multi` binaries by default to inspect the installed rules,
 	// but this can be changed to directly use `iptables-<mode>-save` binaries.
-	mode := iptables.DetectMode(ctx, sbinPath)
+	mode := xtables.DetectMode(ctx, sbinPath)
 
 	// This re-executes the exact same command passed to this program
 	binaryPath := os.Args[0]
@@ -78,7 +78,7 @@ func main() {
 	if err := setIPTablesAlternative(ctx, mode, sbinPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
 		// fake it, though this will probably also fail if they aren't root
-		binaryPath = iptables.XtablesPath(sbinPath, mode)
+		binaryPath = xtables.MultiBinaryPath(sbinPath, mode)
 		args = os.Args
 	}
 
@@ -102,7 +102,7 @@ func main() {
 }
 
 // setIPTablesAlternative updates the system to use the given iptables mode
-func setIPTablesAlternative(ctx context.Context, mode iptables.Mode, sbinPath string) error {
+func setIPTablesAlternative(ctx context.Context, mode xtables.Mode, sbinPath string) error {
 	modeStr := string(mode)
 
 	if path, _ := exec.LookPath(filepath.Join(sbinPath, "alternatives")); path != "" {
@@ -122,7 +122,7 @@ func setIPTablesAlternative(ctx context.Context, mode iptables.Mode, sbinPath st
 		return nil
 	} else {
 		// If we don't find any tool to manage alternatives, handle it manually with symlinks.
-		return linkAll(ctx, sbinPath, iptables.IPTablesBinaries, iptables.XtablesPath(sbinPath, mode))
+		return linkAll(ctx, sbinPath, xtables.IPTablesBinaries, xtables.MultiBinaryPath(sbinPath, mode))
 	}
 }
 
@@ -151,7 +151,7 @@ func install(ctx context.Context) {
 	wrapperPath = filepath.Clean(wrapperPath)
 	installDir := filepath.Dir(wrapperPath)
 
-	if linkAll(ctx, installDir, iptables.IPTablesBinaries, wrapperPath); err != nil {
+	if linkAll(ctx, installDir, xtables.IPTablesBinaries, wrapperPath); err != nil {
 		fatal(err)
 	}
 }
