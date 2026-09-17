@@ -66,7 +66,7 @@ func main() {
 
 	// We use `xtables-<mode>-multi` binaries by default to inspect the installed rules,
 	// but this can be changed to directly use `iptables-<mode>-save` binaries.
-	mode := iptables.DetectMode(ctx, iptables.NewXtablesMultiInstallation(sbinPath))
+	mode := iptables.DetectMode(ctx, sbinPath)
 
 	// This re-executes the exact same command passed to this program
 	binaryPath := os.Args[0]

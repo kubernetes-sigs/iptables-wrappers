@@ -14,12 +14,7 @@ limitations under the License.
 package iptables
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
 	"path/filepath"
-
-	"sigs.k8s.io/iptables-wrappers/internal/commands"
 )
 
 // Mode represents the two different modes iptables can be configured in: nft or legacy.
@@ -40,62 +35,6 @@ var IPTablesBinaries = []string{
 	"ip6tables",
 	"ip6tables-save",
 	"ip6tables-restore",
-}
-
-// Installation represents the set of iptables-*-save binaries installed in a machine.
-// It is expected the machine supports both nft and legacy modes. This can be implemented by
-// calling directly iptables-*-save, xtables, etc. The implementation should accept the same
-// command arguments as the mentioned binaries.
-type Installation interface {
-	// LegacySave runs a iptables-legacy-save command
-	LegacySave(ctx context.Context, out *bytes.Buffer, args ...string) error
-	// LegacySaveIP6 runs a ip6tables-legacy-save command
-	LegacySaveIP6(ctx context.Context, out *bytes.Buffer, args ...string) error
-	// NFTSave runs a iptables-nft-save command
-	NFTSave(ctx context.Context, out *bytes.Buffer, args ...string) error
-	// NFTSaveIP6 runs a ip6tables-nft-save command
-	NFTSaveIP6(ctx context.Context, out *bytes.Buffer, args ...string) error
-}
-
-func NewXtablesMultiInstallation(sbinPath string) XtablesMulti {
-	return XtablesMulti{
-		nftBinary:    XtablesPath(sbinPath, NFTMode),
-		legacyBinary: XtablesPath(sbinPath, LegacyMode),
-	}
-}
-
-// XtablesMulti allows to run iptables commands using xtables-*-multi.
-// It implements iptablesInstallation.
-type XtablesMulti struct {
-	nftBinary    string
-	legacyBinary string
-}
-
-func (x XtablesMulti) LegacySave(ctx context.Context, out *bytes.Buffer, args ...string) error {
-	return x.exec(ctx, out, x.legacyBinary, "iptables-save", args...)
-}
-
-func (x XtablesMulti) LegacySaveIP6(ctx context.Context, out *bytes.Buffer, args ...string) error {
-	return x.exec(ctx, out, x.legacyBinary, "ip6tables-save", args...)
-}
-
-func (x XtablesMulti) NFTSave(ctx context.Context, out *bytes.Buffer, args ...string) error {
-	return x.exec(ctx, out, x.nftBinary, "iptables-save", args...)
-}
-
-func (x XtablesMulti) NFTSaveIP6(ctx context.Context, out *bytes.Buffer, args ...string) error {
-	return x.exec(ctx, out, x.nftBinary, "ip6tables-save", args...)
-}
-
-func (x XtablesMulti) exec(ctx context.Context, out *bytes.Buffer, multiBinary, command string, args ...string) error {
-	allArgs := make([]string, 0, len(args)+1)
-	allArgs = append(allArgs, command)
-	allArgs = append(allArgs, args...)
-
-	c := exec.CommandContext(ctx, multiBinary, allArgs...)
-	c.Stdout = out
-
-	return commands.RunAndReadError(c)
 }
 
 // XtablesPath returns the path to the `xtables-<mode>-multi` binary

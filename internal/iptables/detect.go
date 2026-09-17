@@ -17,6 +17,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 
 	"sigs.k8s.io/iptables-wrappers/internal/files"
 )
@@ -33,9 +35,17 @@ func DetectBinaryDir() (string, error) {
 	}
 }
 
+const (
+	xtablesLegacyMultiBinaryName = "xtables-legacy-multi"
+	xtablesNFTMultiBinaryName    = "xtables-nft-multi"
+)
+
 // DetectMode inspects the current iptables entries and tries to
 // guess which iptables mode is being used: legacy or nft
-func DetectMode(ctx context.Context, iptables Installation) Mode {
+func DetectMode(ctx context.Context, sbinPath string) Mode {
+	nftBinary := filepath.Join(sbinPath, xtablesNFTMultiBinaryName)
+	legacyBinary := filepath.Join(sbinPath, xtablesLegacyMultiBinaryName)
+
 	// This method ignores all errors, this is on purpose. We execute all commands
 	// and try to detect patterns in a best effort basis. If somthing fails,
 	// continue with the next step. Worse case scenario if everything fails,
@@ -47,12 +57,12 @@ func DetectMode(ctx context.Context, iptables Installation) Mode {
 	// iptables-nft, because we can check that more efficiently and
 	// it's more common these days.
 	rulesOutput := &bytes.Buffer{}
-	_ = iptables.NFTSave(ctx, rulesOutput, "-t", "mangle")
+	doExec(ctx, rulesOutput, nftBinary, "iptables-save", "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return NFTMode
 	}
 	rulesOutput.Reset()
-	_ = iptables.NFTSaveIP6(ctx, rulesOutput, "-t", "mangle")
+	doExec(ctx, rulesOutput, nftBinary, "ip6tables-save", "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return NFTMode
 	}
@@ -62,16 +72,26 @@ func DetectMode(ctx context.Context, iptables Installation) Mode {
 	// can't pass "-t mangle" to iptables-legacy-save because it would
 	// cause the kernel to create that table if it didn't already
 	// exist, which we don't want. So we have to grab all the rules.
-	_ = iptables.LegacySave(ctx, rulesOutput)
+	doExec(ctx, rulesOutput, legacyBinary, "iptables-save")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return LegacyMode
 	}
 	rulesOutput.Reset()
-	_ = iptables.LegacySaveIP6(ctx, rulesOutput)
+	doExec(ctx, rulesOutput, legacyBinary, "ip6tables-save")
 	if hasKubeletChains(rulesOutput.Bytes()) {
 		return LegacyMode
 	}
 
 	// If we can't detect either of the patterns, default to nft.
 	return NFTMode
+}
+
+func doExec(ctx context.Context, out *bytes.Buffer, multiBinary, command string, args ...string) {
+	allArgs := make([]string, 0, len(args)+1)
+	allArgs = append(allArgs, command)
+	allArgs = append(allArgs, args...)
+
+	c := exec.CommandContext(ctx, multiBinary, allArgs...)
+	c.Stdout = out
+	_ = c.Run()
 }
