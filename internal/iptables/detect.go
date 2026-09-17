@@ -33,16 +33,6 @@ func DetectBinaryDir() (string, error) {
 	}
 }
 
-// Mode represents the two different modes iptables can be
-// configured to: nft or legacy. In string form it can be used to
-// to complete all `iptables-*` commands.
-type Mode string
-
-const (
-	legacy Mode = "legacy"
-	nft    Mode = "nft"
-)
-
 // DetectMode inspects the current iptables entries and tries to
 // guess which iptables mode is being used: legacy or nft
 func DetectMode(ctx context.Context, iptables Installation) Mode {
@@ -59,12 +49,12 @@ func DetectMode(ctx context.Context, iptables Installation) Mode {
 	rulesOutput := &bytes.Buffer{}
 	_ = iptables.NFTSave(ctx, rulesOutput, "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return nft
+		return NFTMode
 	}
 	rulesOutput.Reset()
 	_ = iptables.NFTSaveIP6(ctx, rulesOutput, "-t", "mangle")
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return nft
+		return NFTMode
 	}
 	rulesOutput.Reset()
 
@@ -74,14 +64,14 @@ func DetectMode(ctx context.Context, iptables Installation) Mode {
 	// exist, which we don't want. So we have to grab all the rules.
 	_ = iptables.LegacySave(ctx, rulesOutput)
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return legacy
+		return LegacyMode
 	}
 	rulesOutput.Reset()
 	_ = iptables.LegacySaveIP6(ctx, rulesOutput)
 	if hasKubeletChains(rulesOutput.Bytes()) {
-		return legacy
+		return LegacyMode
 	}
 
-	// If we can't detect any of the 2 patterns, default to nft.
-	return nft
+	// If we can't detect either of the patterns, default to nft.
+	return NFTMode
 }

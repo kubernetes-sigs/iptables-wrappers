@@ -98,9 +98,7 @@ func (s Symlinker) UseMode(ctx context.Context, mode Mode) error {
 
 // LinkAll creates symlinks for all iptables commands to the targetPath.
 func (s Symlinker) LinkAll(ctx context.Context, targetPath string) error {
-	cmds := []string{"iptables", "iptables-save", "iptables-restore", "ip6tables", "ip6tables-save", "ip6tables-restore"}
-
-	for _, cmd := range cmds {
+	for _, cmd := range IPTablesBinaries {
 		cmdPath := filepath.Join(s.sbinPath, cmd)
 		// If deleting fails, ignore it and try to create symlink regardless
 		_ = os.RemoveAll(cmdPath)

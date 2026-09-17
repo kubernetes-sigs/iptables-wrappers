@@ -22,10 +22,25 @@ import (
 	"sigs.k8s.io/iptables-wrappers/internal/commands"
 )
 
+// Mode represents the two different modes iptables can be configured in: nft or legacy.
+// The string value is identical to the form used in iptables command names (e.g.
+// "iptables-legacy", "ip6tables-nft-save", "xtables-nft-multi")
+type Mode string
+
 const (
-	xtablesNFTMultiBinaryName    = "xtables-nft-multi"
-	xtablesLegacyMultiBinaryName = "xtables-legacy-multi"
+	LegacyMode Mode = "legacy"
+	NFTMode    Mode = "nft"
 )
+
+// IPTablesBinaries is the list of aliases for the xtables-*-multi binaries
+var IPTablesBinaries = []string{
+	"iptables",
+	"iptables-save",
+	"iptables-restore",
+	"ip6tables",
+	"ip6tables-save",
+	"ip6tables-restore",
+}
 
 // Installation represents the set of iptables-*-save binaries installed in a machine.
 // It is expected the machine supports both nft and legacy modes. This can be implemented by
@@ -44,8 +59,8 @@ type Installation interface {
 
 func NewXtablesMultiInstallation(sbinPath string) XtablesMulti {
 	return XtablesMulti{
-		nftBinary:    filepath.Join(sbinPath, xtablesNFTMultiBinaryName),
-		legacyBinary: filepath.Join(sbinPath, xtablesLegacyMultiBinaryName),
+		nftBinary:    XtablesPath(sbinPath, NFTMode),
+		legacyBinary: XtablesPath(sbinPath, LegacyMode),
 	}
 }
 
@@ -83,7 +98,7 @@ func (x XtablesMulti) exec(ctx context.Context, out *bytes.Buffer, multiBinary, 
 	return commands.RunAndReadError(c)
 }
 
-// XtablesPath returns the path to the `xtable-<mode>-multi binary
+// XtablesPath returns the path to the `xtables-<mode>-multi` binary
 func XtablesPath(sbinPath string, mode Mode) string {
 	return filepath.Join(sbinPath, "xtables-"+string(mode)+"-multi")
 }
