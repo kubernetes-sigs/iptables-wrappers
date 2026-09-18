@@ -55,7 +55,7 @@ func main() {
 	ctx := context.Background()
 
 	if len(os.Args) == 2 && os.Args[1] == "install" {
-		install(ctx)
+		install()
 		return
 	}
 
@@ -108,33 +108,33 @@ func setIPTablesAlternative(ctx context.Context, mode xtables.Mode, sbinPath str
 	if path, _ := exec.LookPath(filepath.Join(sbinPath, "alternatives")); path != "" {
 		// Fedora-style "alternatives".
 		if out, err := exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+string(mode))).CombinedOutput(); err != nil {
-			return fmt.Errorf("alternatives to update iptables to mode %s: %v: %s", string(mode), err, out)
+			return fmt.Errorf("alternatives to update iptables to mode %s: %w: %s", string(mode), err, out)
 		}
 		return nil
 	} else if path, _ := exec.LookPath(filepath.Join(sbinPath, "update-alternatives")); path != "" {
 		// Debian-style "update-alternatives".
 		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr)).CombinedOutput(); err != nil {
-			return fmt.Errorf("update-alternatives iptables to mode %s: %v: %s", modeStr, err, out)
+			return fmt.Errorf("update-alternatives iptables to mode %s: %w: %s", modeStr, err, out)
 		}
 		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "ip6tables", filepath.Join(sbinPath, "ip6tables-"+modeStr)).CombinedOutput(); err != nil {
-			return fmt.Errorf("update-alternatives ip6tables to mode %s: %v: %s", modeStr, err, out)
+			return fmt.Errorf("update-alternatives ip6tables to mode %s: %w: %s", modeStr, err, out)
 		}
 		return nil
 	} else {
 		// If we don't find any tool to manage alternatives, handle it manually with symlinks.
-		return linkAll(ctx, sbinPath, xtables.IPTablesBinaries, xtables.MultiBinaryPath(sbinPath, mode))
+		return linkAll(sbinPath, xtables.IPTablesBinaries, xtables.MultiBinaryPath(sbinPath, mode))
 	}
 }
 
 // linkAll creates symlinks from each element of linknames in binaryPath, to targetBinary.
-func linkAll(ctx context.Context, binaryPath string, linknames []string, targetBinary string) error {
+func linkAll(binaryPath string, linknames []string, targetBinary string) error {
 	for _, cmd := range linknames {
 		cmdPath := filepath.Join(binaryPath, cmd)
 		// If deleting fails, ignore it and try to create symlink regardless
 		_ = os.RemoveAll(cmdPath)
 
 		if err := os.Symlink(targetBinary, cmdPath); err != nil {
-			return fmt.Errorf("creating %s symlink to %s: %v", cmd, targetBinary, err)
+			return fmt.Errorf("creating %s symlink to %s: %w", cmd, targetBinary, err)
 		}
 	}
 
@@ -143,7 +143,7 @@ func linkAll(ctx context.Context, binaryPath string, linknames []string, targetB
 
 // install creates symlinks for all iptables binaries in the same directory
 // as the current binary being executed.
-func install(ctx context.Context) {
+func install() {
 	wrapperPath, err := os.Executable()
 	if err != nil {
 		fatal(err)
@@ -151,7 +151,7 @@ func install(ctx context.Context) {
 	wrapperPath = filepath.Clean(wrapperPath)
 	installDir := filepath.Dir(wrapperPath)
 
-	if linkAll(ctx, installDir, xtables.IPTablesBinaries, wrapperPath); err != nil {
+	if err := linkAll(installDir, xtables.IPTablesBinaries, wrapperPath); err != nil {
 		fatal(err)
 	}
 }

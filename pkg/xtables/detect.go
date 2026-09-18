@@ -19,6 +19,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 )
 
 // DetectBinaryDir tries to detect the `iptables` location in
@@ -92,4 +93,12 @@ func doExec(ctx context.Context, out *bytes.Buffer, multiBinary, command string,
 	c := exec.CommandContext(ctx, multiBinary, allArgs...)
 	c.Stdout = out
 	_ = c.Run()
+}
+
+var kubeletChainsRegex = regexp.MustCompile(`(?m)^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)`)
+
+// hasKubeletChains checks if the output of an iptables*-save command
+// contains any of the rules set by kubelet.
+func hasKubeletChains(output []byte) bool {
+	return kubeletChainsRegex.Match(output)
 }
