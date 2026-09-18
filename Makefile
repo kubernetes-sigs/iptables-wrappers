@@ -31,3 +31,5 @@ check-fedora: build
 
 check-alpine: build
 	./test/run-test.sh alpine
+
+.PHONY: all build clean vet fmt check check-debian check-fedora check-alpine
