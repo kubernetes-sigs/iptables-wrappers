@@ -15,6 +15,9 @@ clean:
 verify:
 	./hack/verify.sh
 
+update:
+	./hack/update.sh
+
 check: check-debian check-fedora check-alpine
 
 check-debian: build
@@ -26,4 +29,4 @@ check-fedora: build
 check-alpine: build
 	./test/run-test.sh alpine
 
-.PHONY: all build clean verify check check-debian check-fedora check-alpine
+.PHONY: all build clean verify update check check-debian check-fedora check-alpine
