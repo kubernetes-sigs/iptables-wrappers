@@ -1,13 +1,16 @@
 BIN_DIR ?= bin
 GO ?= go
 
-all: fmt vet check
+all: build
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 build: $(BIN_DIR)
-	CGO_ENABLED=0 $(GO) build -ldflags='-s -w -extldflags="-static" -buildid=""' -trimpath -o $(BIN_DIR)/iptables-wrapper github.com/kubernetes-sigs/iptables-wrappers
+	CGO_ENABLED=0 $(GO) build -ldflags='-s -w -extldflags="-static" -buildid=""' -trimpath -o $(BIN_DIR)/iptables-wrapper sigs.k8s.io/iptables-wrappers
+
+clean:
+	rm -f $(BIN_DIR)/iptables-wrapper
 
 vet: ## Run go vet against code.
 	$(GO) vet ./...

@@ -48,7 +48,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/kubernetes-sigs/iptables-wrappers/internal/iptables"
+	"sigs.k8s.io/iptables-wrappers/pkg/xtables"
 )
 
 func main() {
@@ -59,14 +59,14 @@ func main() {
 		return
 	}
 
-	sbinPath, err := iptables.DetectBinaryDir()
+	sbinPath, err := xtables.DetectBinaryDir()
 	if err != nil {
 		fatal(err)
 	}
 
 	// We use `xtables-<mode>-multi` binaries by default to inspect the installed rules,
 	// but this can be changed to directly use `iptables-<mode>-save` binaries.
-	mode := iptables.DetectMode(ctx, iptables.NewXtablesMultiInstallation(sbinPath))
+	mode := xtables.DetectMode(ctx, sbinPath)
 
 	// This re-executes the exact same command passed to this program
 	binaryPath := os.Args[0]
@@ -75,11 +75,10 @@ func main() {
 		args = os.Args[1:]
 	}
 
-	selector := iptables.BuildAlternativeSelector(sbinPath)
-	if err := selector.UseMode(ctx, mode); err != nil {
+	if err := setIPTablesAlternative(ctx, mode, sbinPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
 		// fake it, though this will probably also fail if they aren't root
-		binaryPath = iptables.XtablesPath(sbinPath, mode)
+		binaryPath = xtables.MultiBinaryPath(sbinPath, mode)
 		args = os.Args
 	}
 
@@ -102,6 +101,46 @@ func main() {
 	}
 }
 
+// setIPTablesAlternative updates the system to use the given iptables mode
+func setIPTablesAlternative(ctx context.Context, mode xtables.Mode, sbinPath string) error {
+	modeStr := string(mode)
+
+	if path, _ := exec.LookPath(filepath.Join(sbinPath, "alternatives")); path != "" {
+		// Fedora-style "alternatives".
+		if out, err := exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+string(mode))).CombinedOutput(); err != nil {
+			return fmt.Errorf("alternatives to update iptables to mode %s: %v: %s", string(mode), err, out)
+		}
+		return nil
+	} else if path, _ := exec.LookPath(filepath.Join(sbinPath, "update-alternatives")); path != "" {
+		// Debian-style "update-alternatives".
+		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr)).CombinedOutput(); err != nil {
+			return fmt.Errorf("update-alternatives iptables to mode %s: %v: %s", modeStr, err, out)
+		}
+		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "ip6tables", filepath.Join(sbinPath, "ip6tables-"+modeStr)).CombinedOutput(); err != nil {
+			return fmt.Errorf("update-alternatives ip6tables to mode %s: %v: %s", modeStr, err, out)
+		}
+		return nil
+	} else {
+		// If we don't find any tool to manage alternatives, handle it manually with symlinks.
+		return linkAll(ctx, sbinPath, xtables.IPTablesBinaries, xtables.MultiBinaryPath(sbinPath, mode))
+	}
+}
+
+// linkAll creates symlinks from each element of linknames in binaryPath, to targetBinary.
+func linkAll(ctx context.Context, binaryPath string, linknames []string, targetBinary string) error {
+	for _, cmd := range linknames {
+		cmdPath := filepath.Join(binaryPath, cmd)
+		// If deleting fails, ignore it and try to create symlink regardless
+		_ = os.RemoveAll(cmdPath)
+
+		if err := os.Symlink(targetBinary, cmdPath); err != nil {
+			return fmt.Errorf("creating %s symlink to %s: %v", cmd, targetBinary, err)
+		}
+	}
+
+	return nil
+}
+
 // install creates symlinks for all iptables binaries in the same directory
 // as the current binary being executed.
 func install(ctx context.Context) {
@@ -112,7 +151,7 @@ func install(ctx context.Context) {
 	wrapperPath = filepath.Clean(wrapperPath)
 	installDir := filepath.Dir(wrapperPath)
 
-	if err := iptables.NewSymlinker(installDir).LinkAll(ctx, wrapperPath); err != nil {
+	if linkAll(ctx, installDir, xtables.IPTablesBinaries, wrapperPath); err != nil {
 		fatal(err)
 	}
 }
