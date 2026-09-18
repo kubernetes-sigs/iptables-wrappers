@@ -1,0 +1,36 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - gochecknoinits
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    errorlint:
+      errorf: true
+    revive:
+      rules:
+        # indent-error-flow is too opinionated and sometimes makes recommendations that
+        # obscure the logical structure of the code.
+        - name: indent-error-flow
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax

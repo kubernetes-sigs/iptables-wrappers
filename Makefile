@@ -12,14 +12,8 @@ build: $(BIN_DIR)
 clean:
 	rm -f $(BIN_DIR)/iptables-wrapper
 
-vet: ## Run go vet against code.
-	$(GO) vet ./...
-
-fmt: ## Check formatting
-	if [ "$$(gofmt -e -l . | tee /dev/tty | wc -l)" -gt 0 ]; then \
-		echo "Go files need formatting"; \
-	exit 1; \
-	fi
+verify:
+	./hack/verify.sh
 
 check: check-debian check-fedora check-alpine
 
@@ -32,4 +26,4 @@ check-fedora: build
 check-alpine: build
 	./test/run-test.sh alpine
 
-.PHONY: all build clean vet fmt check check-debian check-fedora check-alpine
+.PHONY: all build clean verify check check-debian check-fedora check-alpine
