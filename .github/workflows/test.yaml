@@ -1,0 +1,45 @@
+on: [pull_request]
+name: Test
+env:
+  GO_VERSION: 1.26.x
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - run: make check
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - run: make verify
+  apidiff:
+    runs-on: ubuntu-latest
+    if: github.base_ref
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - name: Add GOBIN to PATH
+      run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+    - name: Install dependencies
+      run: go install golang.org/x/exp/cmd/apidiff@7ab1446f8b90c13150a856cfe6a0e8ab9af5a50d
+    - name: Checkout old code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        ref: ${{ github.base_ref }}
+        path: "old"
+    - name: Checkout new code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        path: "new"
+    - name: APIDiff
+      run: ./hack/verify-apidiff.sh -d ../old
+      working-directory: "new"
