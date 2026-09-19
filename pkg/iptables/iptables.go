@@ -22,6 +22,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -210,12 +211,12 @@ func (runner *runner) EnsureChain(table Table, chain Chain) (bool, error) {
 
 	out, err := runner.run(opCreateChain, fullArgs)
 	if err != nil {
-		if ee, ok := err.(utilexec.ExitError); ok {
+		if ee, ok := errors.AsType[utilexec.ExitError](err); ok {
 			if ee.Exited() && ee.ExitStatus() == 1 {
 				return true, nil
 			}
 		}
-		return false, fmt.Errorf("error creating chain %q: %v: %s", chain, err, out)
+		return false, fmt.Errorf("error creating chain %q: %w: %s", chain, err, out)
 	}
 	return false, nil
 }
@@ -226,7 +227,7 @@ func (runner *runner) FlushChain(table Table, chain Chain) error {
 
 	out, err := runner.run(opFlushChain, fullArgs)
 	if err != nil {
-		return fmt.Errorf("error flushing chain %q: %v: %s", chain, err, out)
+		return fmt.Errorf("error flushing chain %q: %w: %s", chain, err, out)
 	}
 	return nil
 }
@@ -237,7 +238,7 @@ func (runner *runner) DeleteChain(table Table, chain Chain) error {
 
 	out, err := runner.run(opDeleteChain, fullArgs)
 	if err != nil {
-		return fmt.Errorf("error deleting chain %q: %v: %s", chain, err, out)
+		return fmt.Errorf("error deleting chain %q: %w: %s", chain, err, out)
 	}
 	return nil
 }
@@ -255,7 +256,7 @@ func (runner *runner) EnsureRule(position RulePosition, table Table, chain Chain
 	}
 	out, err := runner.run(operation(position), fullArgs)
 	if err != nil {
-		return false, fmt.Errorf("error appending rule: %v: %s", err, out)
+		return false, fmt.Errorf("error appending rule: %w: %s", err, out)
 	}
 	return false, nil
 }
@@ -273,7 +274,7 @@ func (runner *runner) DeleteRule(table Table, chain Chain, args ...string) error
 	}
 	out, err := runner.run(opDeleteRule, fullArgs)
 	if err != nil {
-		return fmt.Errorf("error deleting rule: %v: %s", err, out)
+		return fmt.Errorf("error deleting rule: %w: %s", err, out)
 	}
 	return nil
 }
@@ -302,7 +303,7 @@ func (runner *runner) SaveInto(table Table, buffer *bytes.Buffer) error {
 
 	err := cmd.Run()
 	if err != nil {
-		stderrBuffer.WriteTo(buffer) // ignore error, since we need to return the original error
+		_, _ = stderrBuffer.WriteTo(buffer) // ignore error, since we need to return the original error
 	}
 	return err
 }
@@ -399,14 +400,14 @@ func (runner *runner) checkRule(args []string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if ee, ok := err.(utilexec.ExitError); ok {
+	if ee, ok := errors.AsType[utilexec.ExitError](err); ok {
 		// iptables uses exit(1) to indicate a failure of the operation,
 		// as compared to a malformed commandline, for example.
 		if ee.Exited() && ee.ExitStatus() == 1 {
 			return false, nil
 		}
 	}
-	return false, fmt.Errorf("error checking rule: %v: %s", err, out)
+	return false, fmt.Errorf("error checking rule: %w: %s", err, out)
 }
 
 // ChainExists is part of Interface
@@ -490,7 +491,7 @@ const iptablesStatusResourceProblem = 4
 // problem" and was unable to attempt the request. In particular, this will be true if it
 // times out trying to get the iptables lock.
 func isResourceError(err error) bool {
-	if ee, isExitError := err.(utilexec.ExitError); isExitError {
+	if ee, isExitError := errors.AsType[utilexec.ExitError](err); isExitError {
 		return ee.ExitStatus() == iptablesStatusResourceProblem
 	}
 	return false

@@ -213,9 +213,9 @@ func TestIPTablesMonitor(t *testing.T) {
 	}
 
 	// If we delete all of the chains, it should reload
-	ipt.DeleteChain(TableMangle, canary)
-	ipt.DeleteChain(TableFilter, canary)
-	ipt.DeleteChain(TableNAT, canary)
+	_ = ipt.DeleteChain(TableMangle, canary)
+	_ = ipt.DeleteChain(TableFilter, canary)
+	_ = ipt.DeleteChain(TableNAT, canary)
 
 	if err := waitForReloads(&reloads, 1); err != nil {
 		t.Errorf("got unexpected number of reloads after flush: %v", err)
@@ -225,8 +225,8 @@ func TestIPTablesMonitor(t *testing.T) {
 	}
 
 	// If we delete two chains, it should not reload yet
-	ipt.DeleteChain(TableMangle, canary)
-	ipt.DeleteChain(TableFilter, canary)
+	_ = ipt.DeleteChain(TableMangle, canary)
+	_ = ipt.DeleteChain(TableFilter, canary)
 
 	if err := waitForNoReload(&reloads, 1); err != nil {
 		t.Errorf("got unexpected number of reloads after partial flush: %v", err)
@@ -236,7 +236,7 @@ func TestIPTablesMonitor(t *testing.T) {
 	// delete the last chain. The monitor should not reload, because it can't actually
 	// tell if the chain was deleted or not.
 	mfe.blockIPTables(true)
-	ipt.DeleteChain(TableNAT, canary)
+	_ = ipt.DeleteChain(TableNAT, canary)
 	if err := waitForBlocked(mfe); err != nil {
 		t.Errorf("failed waiting for monitor to be blocked from monitoring: %v", err)
 	}
@@ -326,7 +326,7 @@ func ensureNoChains(mfe *monitorFakeExec) bool {
 
 func waitForReloads(reloads *uint32, expected uint32) error {
 	if atomic.LoadUint32(reloads) < expected {
-		pollImmediate(100*time.Millisecond, time.Second, func() (bool, error) {
+		_ = pollImmediate(100*time.Millisecond, time.Second, func() (bool, error) {
 			return atomic.LoadUint32(reloads) >= expected, nil
 		})
 	}
@@ -338,7 +338,7 @@ func waitForReloads(reloads *uint32, expected uint32) error {
 }
 
 func waitForNoReload(reloads *uint32, expected uint32) error {
-	pollImmediate(50*time.Millisecond, 250*time.Millisecond, func() (bool, error) {
+	_ = pollImmediate(50*time.Millisecond, 250*time.Millisecond, func() (bool, error) {
 		return atomic.LoadUint32(reloads) > expected, nil
 	})
 
