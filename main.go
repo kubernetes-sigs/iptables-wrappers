@@ -48,6 +48,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	utilexec "k8s.io/utils/exec"
+
 	"sigs.k8s.io/iptables-wrappers/pkg/xtables"
 )
 
@@ -59,14 +61,16 @@ func main() {
 		return
 	}
 
-	sbinPath, err := xtables.DetectBinaryDir()
+	execer := utilexec.New()
+
+	sbinPath, err := xtables.DetectBinaryDir(execer)
 	if err != nil {
 		fatal(err)
 	}
 
 	// We use `xtables-<mode>-multi` binaries by default to inspect the installed rules,
 	// but this can be changed to directly use `iptables-<mode>-save` binaries.
-	mode := xtables.DetectMode(ctx, sbinPath)
+	mode := xtables.DetectMode(ctx, execer, sbinPath)
 
 	// This re-executes the exact same command passed to this program
 	binaryPath := os.Args[0]
@@ -82,9 +86,9 @@ func main() {
 		args = os.Args
 	}
 
-	cmdIPTables := exec.CommandContext(ctx, binaryPath, args...)
-	cmdIPTables.Stdout = os.Stdout
-	cmdIPTables.Stderr = os.Stderr
+	cmdIPTables := execer.CommandContext(ctx, binaryPath, args...)
+	cmdIPTables.SetStdout(os.Stdout)
+	cmdIPTables.SetStderr(os.Stderr)
 
 	if err := cmdIPTables.Run(); err != nil {
 		code := 1

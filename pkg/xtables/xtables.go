@@ -14,7 +14,11 @@ limitations under the License.
 package xtables
 
 import (
+	"context"
 	"path/filepath"
+	"strings"
+
+	utilexec "k8s.io/utils/exec"
 )
 
 // Mode represents the two different modes iptables can be configured in: nft or legacy.
@@ -40,4 +44,57 @@ var IPTablesBinaries = []string{
 // MultiBinaryPath returns the path to the `xtables-<mode>-multi` binary
 func MultiBinaryPath(sbinPath string, mode Mode) string {
 	return filepath.Join(sbinPath, "xtables-"+string(mode)+"-multi")
+}
+
+// ExecWrapper wraps a utilexec.Interface and reimplements it with support for rewriting
+// iptables commands to always use the system Mode.
+type ExecWrapper struct {
+	execer   utilexec.Interface
+	mappings map[string]string
+}
+
+var _ utilexec.Interface = &ExecWrapper{}
+
+// NewExecWrapper detects the system iptables mode and creates an ExecWrapper that uses it.
+func NewExecWrapper(ctx context.Context, execer utilexec.Interface) (*ExecWrapper, error) {
+	sbinDir, err := DetectBinaryDir(execer)
+	if err != nil {
+		return nil, err
+	}
+
+	mode := DetectMode(ctx, execer, sbinDir)
+	mappings := map[string]string{}
+	for _, binary := range IPTablesBinaries {
+		mapped := filepath.Join(sbinDir, strings.Replace(binary, "tables", "tables-"+string(mode), 1))
+		mappings[binary] = mapped
+		mappings[filepath.Join("/sbin", binary)] = mapped
+		mappings[filepath.Join("/usr/sbin", binary)] = mapped
+	}
+
+	return &ExecWrapper{
+		execer:   execer,
+		mappings: mappings,
+	}, nil
+}
+
+func (mew *ExecWrapper) mapCommand(cmd string) string {
+	if mapped := mew.mappings[cmd]; mapped != "" {
+		return mapped
+	}
+	return cmd
+}
+
+// Command is part of utilexec.Interface
+func (mew *ExecWrapper) Command(cmd string, args ...string) utilexec.Cmd {
+	return mew.execer.Command(mew.mapCommand(cmd), args...)
+}
+
+// CommandContext is part of utilexec.Interface
+func (mew *ExecWrapper) CommandContext(ctx context.Context, cmd string, args ...string) utilexec.Cmd {
+	return mew.execer.CommandContext(ctx, mew.mapCommand(cmd), args...)
+}
+
+// LookPath is part of utilexec.Interface
+func (mew *ExecWrapper) LookPath(file string) (string, error) {
+	return mew.execer.LookPath(file)
 }

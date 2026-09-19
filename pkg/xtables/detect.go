@@ -14,37 +14,30 @@ limitations under the License.
 package xtables
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"errors"
-	"os/exec"
 	"path/filepath"
-	"regexp"
+	"strings"
+
+	utilexec "k8s.io/utils/exec"
 )
 
 // DetectBinaryDir tries to detect the `iptables` location in
 // either /usr/sbin or /sbin. If it's not there, it returns an error.
-func DetectBinaryDir() (string, error) {
-	if path, _ := exec.LookPath("/usr/sbin/iptables"); path != "" {
+func DetectBinaryDir(execer utilexec.Interface) (string, error) {
+	if path, _ := execer.LookPath("/usr/sbin/iptables"); path != "" {
 		return "/usr/sbin", nil
-	} else if path, _ := exec.LookPath("/sbin/iptables"); path != "" {
+	} else if path, _ := execer.LookPath("/sbin/iptables"); path != "" {
 		return "/sbin", nil
 	} else {
 		return "", errors.New("iptables is not present in either /usr/sbin or /sbin")
 	}
 }
 
-const (
-	xtablesLegacyMultiBinaryName = "xtables-legacy-multi"
-	xtablesNFTMultiBinaryName    = "xtables-nft-multi"
-)
-
 // DetectMode inspects the current iptables entries and tries to
 // guess which iptables mode is being used: legacy or nft
-func DetectMode(ctx context.Context, sbinPath string) Mode {
-	nftBinary := filepath.Join(sbinPath, xtablesNFTMultiBinaryName)
-	legacyBinary := filepath.Join(sbinPath, xtablesLegacyMultiBinaryName)
-
+func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string) Mode {
 	// This method ignores all errors, this is on purpose. We execute all commands
 	// and try to detect patterns in a best effort basis. If somthing fails,
 	// continue with the next step. Worse case scenario if everything fails,
@@ -55,29 +48,21 @@ func DetectMode(ctx context.Context, sbinPath string) Mode {
 	// "KUBE-KUBELET-CANARY"), so check that first, against
 	// iptables-nft, because we can check that more efficiently and
 	// it's more common these days.
-	rulesOutput := &bytes.Buffer{}
-	doExec(ctx, rulesOutput, nftBinary, "iptables-save", "-t", "mangle")
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-nft-save", "-t", "mangle") {
 		return NFTMode
 	}
-	rulesOutput.Reset()
-	doExec(ctx, rulesOutput, nftBinary, "ip6tables-save", "-t", "mangle")
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-nft-save", "-t", "mangle") {
 		return NFTMode
 	}
-	rulesOutput.Reset()
 
 	// Check for kubernetes 1.17-or-later with iptables-legacy. We
 	// can't pass "-t mangle" to iptables-legacy-save because it would
 	// cause the kernel to create that table if it didn't already
 	// exist, which we don't want. So we have to grab all the rules.
-	doExec(ctx, rulesOutput, legacyBinary, "iptables-save")
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-legacy-save") {
 		return LegacyMode
 	}
-	rulesOutput.Reset()
-	doExec(ctx, rulesOutput, legacyBinary, "ip6tables-save")
-	if hasKubeletChains(rulesOutput.Bytes()) {
+	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-legacy-save") {
 		return LegacyMode
 	}
 
@@ -85,20 +70,27 @@ func DetectMode(ctx context.Context, sbinPath string) Mode {
 	return NFTMode
 }
 
-func doExec(ctx context.Context, out *bytes.Buffer, multiBinary, command string, args ...string) {
-	allArgs := make([]string, 0, len(args)+1)
-	allArgs = append(allArgs, command)
-	allArgs = append(allArgs, args...)
-
-	c := exec.CommandContext(ctx, multiBinary, allArgs...)
-	c.Stdout = out
-	_ = c.Run()
-}
-
-var kubeletChainsRegex = regexp.MustCompile(`(?m)^:(KUBE-IPTABLES-HINT|KUBE-KUBELET-CANARY)`)
-
-// hasKubeletChains checks if the output of an iptables*-save command
-// contains any of the rules set by kubelet.
-func hasKubeletChains(output []byte) bool {
-	return kubeletChainsRegex.Match(output)
+// Especially on a restart, there may already be lots of iptables rules, so rather than
+// using CombinedOutput() or something simple like that that might end up using a lot of
+// memory, we stream the command output, only keeping a line at a time, and stop as soon
+// as we find a match.
+func execAndScanForKubeletChains(ctx context.Context, execer utilexec.Interface, sbinPath, command string, args ...string) bool {
+	cmd := execer.CommandContext(ctx, filepath.Join(sbinPath, command), args...)
+	stdout, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, ":KUBE-IPTABLES-HINT ") ||
+			strings.HasPrefix(line, ":KUBE-KUBELET-CANARY ") {
+			// SIGPIPE the iptables process
+			_ = stdout.Close()
+			_ = cmd.Wait()
+			return true
+		}
+	}
+	_ = cmd.Wait()
+	return false
 }
