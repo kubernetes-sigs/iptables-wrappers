@@ -150,7 +150,10 @@ func linkAll(binaryPath string, linknames []string, targetBinary string) error {
 func install() {
 	wrapperPath, err := os.Executable()
 	if err != nil {
-		fatal(err)
+		wrapperPath = os.Args[0]
+		if !filepath.IsAbs(wrapperPath) {
+			fatal(fmt.Errorf("needs a mounted proc filesystem (%w) or to be invoked via an absolute path (%q)", err, wrapperPath))
+		}
 	}
 	wrapperPath = filepath.Clean(wrapperPath)
 	installDir := filepath.Dir(wrapperPath)
