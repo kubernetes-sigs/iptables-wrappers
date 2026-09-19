@@ -115,7 +115,7 @@ func ParseIPTablesDump(data string) (*IPTablesDump, error) {
 
 				c, err := dump.GetChain(t.Name, chain)
 				if err != nil {
-					return nil, fmt.Errorf("error parsing rule %q: %v", line, err)
+					return nil, fmt.Errorf("error parsing rule %q: %w", line, err)
 				}
 				if c.Deleted {
 					return nil, fmt.Errorf("cannot add rules to deleted chain %q", chain)
@@ -131,7 +131,7 @@ func ParseIPTablesDump(data string) (*IPTablesDump, error) {
 
 				c, err := dump.GetChain(t.Name, chain)
 				if err != nil {
-					return nil, fmt.Errorf("error parsing rule %q: %v", line, err)
+					return nil, fmt.Errorf("error parsing rule %q: %w", line, err)
 				}
 				if len(c.Rules) != 0 {
 					return nil, fmt.Errorf("cannot delete chain %q after adding rules", chain)
