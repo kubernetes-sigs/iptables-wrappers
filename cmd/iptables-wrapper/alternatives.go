@@ -26,8 +26,12 @@ import (
 // alternativesSelector represents the system's native method for deciding between
 // iptables-legacy and iptables-nft.
 type alternativesSelector interface {
-	// UseMode configures the system to use the selected iptables mode.
-	UseMode(ctx context.Context, mode xtables.Mode) error
+	// Install registers the already-installed iptables-wrapper binary as a new
+	// iptables alternative.
+	Install(ctx context.Context, wrapperPath string) error
+
+	// Update configures the system to use the selected iptables mode.
+	Update(ctx context.Context, mode xtables.Mode) error
 }
 
 // newAlternativesSelector creates the proper alternativesSelector depending on the
@@ -53,7 +57,28 @@ type updateAlternativesMethod struct {
 	sbinPath string
 }
 
-func (u updateAlternativesMethod) UseMode(ctx context.Context, mode xtables.Mode) error {
+func (u updateAlternativesMethod) Install(ctx context.Context, wrapperPath string) error {
+	cmd := exec.CommandContext(ctx, "update-alternatives",
+		"--install", filepath.Join(u.sbinPath, "iptables"), "iptables", wrapperPath, "100",
+		"--slave", filepath.Join(u.sbinPath, "iptables-restore"), "iptables-restore", wrapperPath,
+		"--slave", filepath.Join(u.sbinPath, "iptables-save"), "iptables-save", wrapperPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("could not install iptables-wrapper as an alternative to iptables: %w: %s", err, out)
+	}
+	cmd = exec.CommandContext(ctx, "update-alternatives",
+		"--install", filepath.Join(u.sbinPath, "ip6tables"), "ip6tables", wrapperPath, "100",
+		"--slave", filepath.Join(u.sbinPath, "ip6tables-restore"), "ip6tables-restore", wrapperPath,
+		"--slave", filepath.Join(u.sbinPath, "ip6tables-save"), "ip6tables-save", wrapperPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("could not install iptables-wrapper as an alternative to ip6tables: %w: %s", err, out)
+	}
+
+	return nil
+}
+
+func (u updateAlternativesMethod) Update(ctx context.Context, mode xtables.Mode) error {
 	modeStr := string(mode)
 
 	cmd := exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(u.sbinPath, "iptables-"+modeStr))
@@ -75,7 +100,22 @@ type alternativesMethod struct {
 	sbinPath string
 }
 
-func (a alternativesMethod) UseMode(ctx context.Context, mode xtables.Mode) error {
+func (a alternativesMethod) Install(ctx context.Context, wrapperPath string) error {
+	cmd := exec.CommandContext(ctx, "alternatives",
+		"--install", filepath.Join(a.sbinPath, "iptables"), "iptables", wrapperPath, "100",
+		"--slave", filepath.Join(a.sbinPath, "iptables-restore"), "iptables-restore", wrapperPath,
+		"--slave", filepath.Join(a.sbinPath, "iptables-save"), "iptables-save", wrapperPath,
+		"--slave", filepath.Join(a.sbinPath, "ip6tables"), "ip6tables", wrapperPath,
+		"--slave", filepath.Join(a.sbinPath, "ip6tables-restore"), "ip6tables-restore", wrapperPath,
+		"--slave", filepath.Join(a.sbinPath, "ip6tables-save"), "ip6tables-save", wrapperPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("could not install iptables-wrapper as an alternative to iptables: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (a alternativesMethod) Update(ctx context.Context, mode xtables.Mode) error {
 	modeStr := string(mode)
 
 	cmd := exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(a.sbinPath, "iptables-"+modeStr))
@@ -85,23 +125,23 @@ func (a alternativesMethod) UseMode(ctx context.Context, mode xtables.Mode) erro
 	return nil
 }
 
-func NewSymlinker(sbinPath string) symlinkAlternativesMethod {
-	return symlinkAlternativesMethod{sbinPath: sbinPath}
-}
-
 // symlinkAlternativesMethod manages an iptables setup by manually creating symlinks for
 // all iptables commands.
 type symlinkAlternativesMethod struct {
 	sbinPath string
 }
 
-// UseMode configures the system to use the selected iptables mode.
-func (s symlinkAlternativesMethod) UseMode(_ context.Context, mode xtables.Mode) error {
-	return s.LinkAll(xtables.MultiBinaryPath(s.sbinPath, mode))
+func (s symlinkAlternativesMethod) Install(_ context.Context, wrapperPath string) error {
+	return s.linkAll(wrapperPath)
 }
 
-// LinkAll creates symlinks for all iptables commands to the targetPath.
-func (s symlinkAlternativesMethod) LinkAll(targetPath string) error {
+// Update configures the system to use the selected iptables mode.
+func (s symlinkAlternativesMethod) Update(_ context.Context, mode xtables.Mode) error {
+	return s.linkAll(xtables.MultiBinaryPath(s.sbinPath, mode))
+}
+
+// linkAll creates symlinks for all iptables commands to the targetPath.
+func (s symlinkAlternativesMethod) linkAll(targetPath string) error {
 	for _, cmd := range xtables.IPTablesBinaries {
 		cmdPath := filepath.Join(s.sbinPath, cmd)
 		// If deleting fails, ignore it and try to create symlink regardless

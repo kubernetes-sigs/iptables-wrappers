@@ -57,17 +57,17 @@ import (
 
 func main() {
 	ctx := context.Background()
-
-	if len(os.Args) == 2 && os.Args[1] == "install" {
-		install()
-		return
-	}
-
 	execer := utilexec.New()
 
 	sbinPath, err := xtables.DetectBinaryDir(execer)
 	if err != nil {
 		fatal(err)
+	}
+	alternatives := newAlternativesSelector(sbinPath)
+
+	if len(os.Args) == 2 && os.Args[1] == "install" {
+		install(ctx, alternatives)
+		return
 	}
 
 	mode := xtables.DetectMode(ctx, execer, sbinPath)
@@ -79,8 +79,7 @@ func main() {
 		args = os.Args[1:]
 	}
 
-	selector := newAlternativesSelector(sbinPath)
-	if err := selector.UseMode(ctx, mode); err != nil {
+	if err := alternatives.Update(ctx, mode); err != nil {
 		// Following the example of iptables's own "legacy tables present"
 		// warning, print the error message as a "comment", so it won't interfere
 		// with iptables-save parsing.
@@ -115,17 +114,15 @@ func main() {
 	}
 }
 
-// install creates symlinks for all iptables binaries in the same directory
-// as the current binary being executed.
-func install() {
+// install creates symlinks for all iptables binaries in the same directory as the
+// existing iptables binaries.
+func install(ctx context.Context, alternatives alternativesSelector) {
 	wrapperPath, err := os.Executable()
 	if err != nil {
 		fatal(err)
 	}
 	wrapperPath = filepath.Clean(wrapperPath)
-	installDir := filepath.Dir(wrapperPath)
-
-	if err := NewSymlinker(installDir).LinkAll(wrapperPath); err != nil {
+	if err := alternatives.Install(ctx, wrapperPath); err != nil {
 		fatal(err)
 	}
 }
