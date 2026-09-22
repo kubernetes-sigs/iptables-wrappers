@@ -70,18 +70,16 @@ func main() {
 		fatal(err)
 	}
 
-	// We use `xtables-<mode>-multi` binaries by default to inspect the installed rules,
-	// but this can be changed to directly use `iptables-<mode>-save` binaries.
 	mode := xtables.DetectMode(ctx, execer, sbinPath)
 
-	// This re-executes the exact same command passed to this program
+	// Extract the original command and arguments.
 	binaryPath := os.Args[0]
 	var args []string
 	if len(os.Args) > 1 {
 		args = os.Args[1:]
 	}
 
-	selector := BuildAlternativeSelector(sbinPath)
+	selector := newAlternativesSelector(sbinPath)
 	if err := selector.UseMode(ctx, mode); err != nil {
 		// Following the example of iptables's own "legacy tables present"
 		// warning, print the error message as a "comment", so it won't interfere
