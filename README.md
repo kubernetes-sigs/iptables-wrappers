@@ -1,38 +1,35 @@
 # iptables-wrappers
 
-This repository consists of wrappers to help with using
-iptables in containers.
+This repository contains helpers for using iptables in containers. In
+particular, it helps Kubernetes pods that want to use iptables in the
+host network namespace deal with figuring out whether the host network
+namespace is using "legacy" iptables or the modern nft-based version
+of iptables.
 
-Specifically, it provides a wrapper to select between the two
-modes of iptables 1.8 ("legacy" and "nft") at runtime, so that
-hostNetwork containers that examine or modify iptables rules will work
-correctly regardless of which mode the underlying system is using.
+There are 2 ways to use iptables-wrappers:
 
-While there are no actual "releases" of iptables-wrappers, there have
-been three tagged versions (plus an intermediate untagged version that
-was used by some consumers):
+  - You can build the `iptables-wrapper` binary and install it into
+    your container image, as described below, and then just call
+    `iptables` (and `iptables-save`, etc.) just like you normally
+    would. The `iptables-wrapper` binary will intercept the first call
+    to any iptables binary, figure out the system iptables mode, and
+    then update the container's filesystem so that further calls to
+    `iptables`, etc, will directly invoke the legacy or nft binaries
+    as appropriate.
 
-  - [v1], 2020-01-12: The original shell-script-based version, which
-    compared the line count of `iptables-legacy-save` and
-    `iptables-nft-save` to guess which version was in use, with a
-    workaround for a bug in iptables 1.8.3. Defaulted to assuming
-    "legacy" if it couldn't determine which was in use.
+  - You can vendor this module and then use its
+    `"sigs.k8s.io/iptables-wrappers/pkg/iptables"` module to make
+    iptables calls, passing `iptables.DetectHostMode` to
+    `iptables.New()`/`iptables.NewBestEffort()` to make the
+    `iptables.Interface` methods automatically use the legacy or nft
+    binaries as appropriate.
 
-  - [v2], 2022-04-12: Required iptables 1.8.4 or later, and improved
-    legacy-vs-nft detection in Kubernetes 1.17 and later by looking
-    for specific iptables chains created by kubelet. Also switched
-    the default/fallback guess from "legacy" to "nft".
-
-  - (untagged), 2023-04-01: Rewritten in go, to better support
-    distroless containers. Dropped support for Kubernetes < 1.17. (Not
-    initially tagged as `v3` while we figured out how to update the
-    installer and unit tests, which then got forgotten about.)
-
-  - [v3], 2026-04-20: Official release of the go version.
-
-[v1]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v1
-[v2]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v2
-[v3]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v3
+  - Alternatively, for binaries that run as system processes (like
+    kubelet or CNI binaries) that just want to invoke `/sbin/iptables`
+    directly; or for pod-network processes that just want to use
+    whatever iptables binary is in their container image, you can use
+    construct the `iptables.Interface` with
+    `iptables.UseInstalledMode`.
 
 ## Background
 
@@ -73,6 +70,11 @@ namespace:
     `iptables-legacy` and `iptables-nft`. On distros without such a
     system, it will just re-point the `iptables`, `iptables-save`,
     etc, symlinks manually.)
+
+While there are no actual "releases" of iptables-wrappers, you can use
+the [`v3`] tag if you want a known-good version of the binary.
+
+[`v3`]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v3
 
 The first time the wrapper is run, it will figure out which mode the
 system is using, update the `iptables`, `iptables-save`, etc, links to
@@ -123,3 +125,22 @@ Some distro-specific installation examples:
   and later ship a hacked version of iptables 1.8 that *only*
   supports nft mode. Therefore, neither can be used as a basis for a
   portable iptables-using container image.
+
+## `pkg/iptables` (and `pkg/xtables`)
+
+The module `"sigs.k8s.io/iptables-wrappers/pkg/iptables"` is a copy of
+Kubernetes's `pkg/util/iptables`, with some minor API updates (in
+particular, to reduce its dependency footprint). Additionally, as
+noted above, the constructors take a `mode` argument that can be used
+to specify that it should or should not do mode auto-detection.
+
+Note that `pkg/iptables` is considered mostly "done", and we have no
+plans to extend its API further.
+
+`"sigs.k8s.io/iptables-wrappers/pkg/xtables"` contains the actual
+`DetectMode` function that does legacy/nft detection, as well as an
+object, `xtables.ExecWrapper` that implements `exec.Interface` from
+`"k8s.io/utils/exec"`, but automatically rewrites all invocations of
+iptables-related binaries to use a particular mode. This is used
+internally by `pkg/iptables`, but could also be used independently.
+
