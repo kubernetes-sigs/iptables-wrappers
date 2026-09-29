@@ -111,5 +111,11 @@ fi
 if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh nft; then
     FAIL "failed nft iptables / new rules test"
 fi
+# /run stays writable for the xtables lock.
+for mode in legacy nft; do
+    if ! docker run --privileged --read-only --tmpfs /run "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh ${mode} readonly; then
+	FAIL "failed ${mode} iptables / read-only filesystem test"
+    fi
+done
 
 PASS "success"
