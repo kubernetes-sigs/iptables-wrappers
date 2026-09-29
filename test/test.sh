@@ -82,6 +82,13 @@ iptables-${wrongmode} -t filter -A BAD-2 -j DROP
 
 ensure_iptables_undecided
 
-iptables -L > /dev/null
+# The first call goes through the wrapper. iptables-restore reads its
+# ruleset from stdin, which has to reach the real binary.
+printf '*filter\n:STDIN-TEST - [0:0]\nCOMMIT\n' | iptables-restore -n
 
 ensure_iptables_resolved ${mode}
+
+if ! iptables-${mode}-save -t filter | grep -q '^:STDIN-TEST '; then
+    echo "iptables-restore through the wrapper did not apply its input" 1>&2
+    exit 1
+fi

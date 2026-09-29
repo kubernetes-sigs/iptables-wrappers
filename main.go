@@ -87,6 +87,7 @@ func main() {
 	}
 
 	cmdIPTables := execer.CommandContext(ctx, binaryPath, args...)
+	cmdIPTables.SetStdin(os.Stdin)
 	cmdIPTables.SetStdout(os.Stdout)
 	cmdIPTables.SetStderr(os.Stderr)
 
