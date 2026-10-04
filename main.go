@@ -44,6 +44,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,13 +81,19 @@ func main() {
 	}
 
 	if err := setIPTablesAlternative(ctx, mode, sbinPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
+		// Existing links: a racing wrapper won, or the root is read-only.
+		if !errors.Is(err, fs.ErrExist) {
+			fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
+		}
 		// fake it, though this will probably also fail if they aren't root
 		binaryPath = xtables.MultiBinaryPath(sbinPath, mode)
 		args = os.Args
+		// The multi-call binary does not strip a path from the applet name.
+		args[0] = filepath.Base(args[0])
 	}
 
 	cmdIPTables := execer.CommandContext(ctx, binaryPath, args...)
+	cmdIPTables.SetStdin(os.Stdin)
 	cmdIPTables.SetStdout(os.Stdout)
 	cmdIPTables.SetStderr(os.Stderr)
 

@@ -17,6 +17,8 @@
 set -eu
 
 mode=$1
+# "readonly": the wrapper cannot redirect the links and runs on every call.
+fs=${2:-readwrite}
 
 case "${mode}" in
     legacy)
@@ -81,6 +83,29 @@ iptables-${wrongmode} -t filter -N BAD-2
 iptables-${wrongmode} -t filter -A BAD-2 -j DROP
 
 ensure_iptables_undecided
+
+if [ "${fs}" = readonly ]; then
+    # iptables-restore reads its ruleset from stdin.
+    printf '*filter\n:STDIN-TEST - [0:0]\nCOMMIT\n' | iptables-restore -n
+    if ! iptables-${mode}-save -t filter | grep -q '^:STDIN-TEST '; then
+	echo "iptables-restore through the wrapper did not apply its input" 1>&2
+	exit 1
+    fi
+
+    # iptables-save writes to stdout; call it by full path.
+    saved=$("${sbin}/iptables-save" -t filter)
+    if ! echo "${saved}" | grep -q '^:STDIN-TEST '; then
+	echo "iptables-save through the wrapper did not print the ${mode} rules" 1>&2
+	exit 1
+    fi
+    if echo "${saved}" | grep -q '^:BAD-'; then
+	echo "iptables-save through the wrapper printed the ${wrongmode} rules" 1>&2
+	exit 1
+    fi
+
+    ensure_iptables_undecided
+    exit 0
+fi
 
 iptables -L > /dev/null
 
