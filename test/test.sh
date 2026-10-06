@@ -106,13 +106,13 @@ esac
 # linked to the wrapper at this point), this also confirms that the wrapper
 # handles stdin and stdout correctly.
 
-printf '*filter\n:STDIN-TEST - [0:0]\nCOMMIT\n' | iptables-restore -n
-if ! iptables-${mode}-save -t filter | grep -q '^:STDIN-TEST '; then
+printf '*filter\n:STDIN-TEST - [0:0]\nCOMMIT\n' | iptables-restore -n 2>/dev/null
+if ! iptables-${mode}-save -t filter 2>/dev/null | grep -q '^:STDIN-TEST '; then
     echo "iptables-restore did not apply its input" 1>&2
     exit 1
 fi
 
-rules=$(iptables-save -t filter)
+rules=$(iptables-save -t filter 2>/dev/null)
 if ! echo "${rules}" | grep -q '^:STDIN-TEST '; then
     echo "iptables-save did not print the ${mode} rules" 1>&2
     exit 1
@@ -123,7 +123,7 @@ if echo "${rules}" | grep -q '^:BAD-'; then
 fi
 
 # Ensure that the binary works correctly when invoked by full path
-${sbin}/iptables -L > /dev/null
+${sbin}/iptables -L > /dev/null 2>/dev/null
 
 case ${fs} in
     "readwrite")
