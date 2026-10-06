@@ -45,10 +45,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	utilexec "k8s.io/utils/exec"
 
@@ -82,14 +82,17 @@ func main() {
 	}
 
 	if err := setIPTablesAlternative(ctx, mode, sbinPath); err != nil {
-		// Existing links: a racing wrapper won, or the root is read-only.
-		if !errors.Is(err, fs.ErrExist) {
-			fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
+		// Following the example of iptables's own "legacy tables present"
+		// warning, print the error message as a "comment", so it won't interfere
+		// with iptables-save parsing.
+		fmt.Fprintf(os.Stderr, "# iptables-wrapper: unable to redirect iptables binaries:\n")
+		for _, line := range strings.Split(strings.TrimSpace(err.Error()), "\n") {
+			fmt.Fprintf(os.Stderr, "#   %s\n", line)
 		}
-		// fake it, though this will probably also fail if they aren't root
+
+		// As a fallback, pass the command to the appropriate multi-binary
 		binaryPath = xtables.MultiBinaryPath(sbinPath, mode)
 		args = os.Args
-		// The multi-call binary does not strip a path from the applet name.
 		args[0] = filepath.Base(args[0])
 	}
 
