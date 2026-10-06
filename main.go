@@ -120,13 +120,13 @@ func main() {
 func setIPTablesAlternative(ctx context.Context, mode xtables.Mode, sbinPath string) error {
 	modeStr := string(mode)
 
-	if path, _ := exec.LookPath(filepath.Join(sbinPath, "alternatives")); path != "" {
+	if path, _ := exec.LookPath("alternatives"); path != "" {
 		// Fedora-style "alternatives".
 		if out, err := exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+string(mode))).CombinedOutput(); err != nil {
 			return fmt.Errorf("alternatives to update iptables to mode %s: %w: %s", string(mode), err, out)
 		}
 		return nil
-	} else if path, _ := exec.LookPath(filepath.Join(sbinPath, "update-alternatives")); path != "" {
+	} else if path, _ := exec.LookPath("update-alternatives"); path != "" {
 		// Debian-style "update-alternatives".
 		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr)).CombinedOutput(); err != nil {
 			return fmt.Errorf("update-alternatives iptables to mode %s: %w: %s", modeStr, err, out)
