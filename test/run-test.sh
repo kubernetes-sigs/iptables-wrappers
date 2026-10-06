@@ -105,16 +105,16 @@ if ! build "${tag}" ${build_arg}; then
     FAIL "build failed unexpectedly"
 fi
 
-if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh legacy; then
-    FAIL "failed legacy iptables / new rules test"
-fi
-if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh nft; then
-    FAIL "failed nft iptables / new rules test"
-fi
-# /run stays writable for the xtables lock.
 for mode in legacy nft; do
-    if ! docker run --privileged --read-only --tmpfs /run "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh ${mode} readonly; then
-	FAIL "failed ${mode} iptables / read-only filesystem test"
+    echo "Running normal test with ${mode} rules"
+    if ! docker run --privileged "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh ${mode}; then
+        FAIL "failed ${mode} iptables test"
+    fi
+
+    echo "Running read-only test with ${mode} rules"
+    # /run stays writable for the xtables lock.
+    if ! docker run --privileged --read-only --tmpfs /run "iptables-wrapper-test-${tag}" /bin/sh ${dash_x:-} /test.sh --readonly ${mode}; then
+	FAIL "failed ${mode} iptables read-only filesystem test"
     fi
 done
 

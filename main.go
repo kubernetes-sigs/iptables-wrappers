@@ -12,31 +12,32 @@ limitations under the License.
 */
 
 /*
-Iptables-wrapper tries to detect which iptables mode is being used by the host
-even when being run from a container. It then updates the iptables commands to
-point to the right binaries for that mode. Before exiting it re-executes the given
-command.
+iptables-wrapper tries to detect which iptables mode is being used by the host when being
+run from a container. It then updates the iptables commands to point to the right binaries
+for that mode and then executes the original command with the correct binary.
 
 The process is as follows:
+
  1. Calls `xtables-<mode>-multi` and checks if the kubelet rules exists.
-    It searches for different patterns in the configured rules, trying to match different
-    kubernetes versions, and it uses the results to guess which mode is in use.
- 2. Updates the alternatives/symlinks to point to the proper binaries for the detected mode.
-    Depending on the OS it uses `update-alternatives`, `alternatives` or it manually creates symlinks.
+
+ 2. Updates the alternatives/symlinks to point to the proper binaries for the detected
+    mode. Depending on the OS, it uses `update-alternatives` or `alternatives`, or it
+    manually creates symlinks.
+
  3. Re-execs the original command received by this binary.
 
-We assume this binary has been symlinked to some/all iptables binaries and whatever was received
-here was intended to be an iptables-* command. If that is not the case and this command is either
-executed directly or through a symlink that doesn't point to an iptables binary,
-it will enter an infinite loop, calling itself recursively.
+Normally, iptables-wrapper will only run once, and further invocations of iptables will go
+directly to the appropriate legacy or nft iptables binaries. However, if step 2 fails
+(generally because the filesystem is read-only), then iptables-wrappers will still
+manually exec the correct legacy/nft binary, and then later invocations of iptables would
+still go to iptables-wrappers, and it would have to re-detect the underlying mode each
+time.
 
-It's important to note that this proxy behavior will only happen on the first iptables-*
-execution. Following invocations will use directly the binaries for the selected mode.
-
-If the command is executed with the `install` argument, it will create symlinks for all
-iptables binaries pointing to itself. It must be invoked by its full path, and it will use
-that path for the iptables binaries as well. This is useful for the installation process
-of the iptables-wrapper itself before first execution.
+If the command is executed with the `install` argument, then instead of its normal
+behavior, it will create symlinks for all iptables binaries pointing to itself. It must be
+invoked by its full path, and it will use that path for the iptables binaries as well.
+This is useful for the installation process of the iptables-wrapper itself before first
+execution.
 */
 package main
 
@@ -44,10 +45,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	utilexec "k8s.io/utils/exec"
 
@@ -81,14 +82,17 @@ func main() {
 	}
 
 	if err := setIPTablesAlternative(ctx, mode, sbinPath); err != nil {
-		// Existing links: a racing wrapper won, or the root is read-only.
-		if !errors.Is(err, fs.ErrExist) {
-			fmt.Fprintf(os.Stderr, "Unable to redirect iptables binaries. (Are you running in an unprivileged pod?): %s\n", err)
+		// Following the example of iptables's own "legacy tables present"
+		// warning, print the error message as a "comment", so it won't interfere
+		// with iptables-save parsing.
+		fmt.Fprintf(os.Stderr, "# iptables-wrapper: unable to redirect iptables binaries:\n")
+		for _, line := range strings.Split(strings.TrimSpace(err.Error()), "\n") {
+			fmt.Fprintf(os.Stderr, "#   %s\n", line)
 		}
-		// fake it, though this will probably also fail if they aren't root
+
+		// As a fallback, pass the command to the appropriate multi-binary
 		binaryPath = xtables.MultiBinaryPath(sbinPath, mode)
 		args = os.Args
-		// The multi-call binary does not strip a path from the applet name.
 		args[0] = filepath.Base(args[0])
 	}
 
@@ -116,13 +120,13 @@ func main() {
 func setIPTablesAlternative(ctx context.Context, mode xtables.Mode, sbinPath string) error {
 	modeStr := string(mode)
 
-	if path, _ := exec.LookPath(filepath.Join(sbinPath, "alternatives")); path != "" {
+	if path, _ := exec.LookPath("alternatives"); path != "" {
 		// Fedora-style "alternatives".
 		if out, err := exec.CommandContext(ctx, "alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+string(mode))).CombinedOutput(); err != nil {
 			return fmt.Errorf("alternatives to update iptables to mode %s: %w: %s", string(mode), err, out)
 		}
 		return nil
-	} else if path, _ := exec.LookPath(filepath.Join(sbinPath, "update-alternatives")); path != "" {
+	} else if path, _ := exec.LookPath("update-alternatives"); path != "" {
 		// Debian-style "update-alternatives".
 		if out, err := exec.CommandContext(ctx, "update-alternatives", "--set", "iptables", filepath.Join(sbinPath, "iptables-"+modeStr)).CombinedOutput(); err != nil {
 			return fmt.Errorf("update-alternatives iptables to mode %s: %w: %s", modeStr, err, out)
