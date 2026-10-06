@@ -16,10 +16,14 @@
 
 set -eu
 
-mode=$1
-# "readonly": the wrapper cannot redirect the links and runs on every call.
-fs=${2:-readwrite}
+if [ "$1" = "--readonly" ]; then
+    fs="readonly"
+    shift
+else
+    fs="readwrite"
+fi
 
+mode=$1
 case "${mode}" in
     legacy)
         wrongmode=nft
@@ -82,31 +86,50 @@ iptables-${wrongmode} -t filter -A BAD-1 -j ACCEPT
 iptables-${wrongmode} -t filter -N BAD-2
 iptables-${wrongmode} -t filter -A BAD-2 -j DROP
 
+# Since we have only invoked explicit aliases, the iptables binary itself should
+# still be unresolved
 ensure_iptables_undecided
 
-if [ "${fs}" = readonly ]; then
-    # iptables-restore reads its ruleset from stdin.
-    printf '*filter\n:STDIN-TEST - [0:0]\nCOMMIT\n' | iptables-restore -n
-    if ! iptables-${mode}-save -t filter | grep -q '^:STDIN-TEST '; then
-	echo "iptables-restore through the wrapper did not apply its input" 1>&2
-	exit 1
-    fi
+# Invoke iptables; assuming a writable filesystem, this should resolve the
+# symlinks
+iptables -L > /dev/null
+case ${fs} in
+    "readwrite")
+        ensure_iptables_resolved ${mode}
+        ;;
+    "readonly")
+        ensure_iptables_undecided
+        ;;
+esac
 
-    # iptables-save writes to stdout; call it by full path.
-    saved=$("${sbin}/iptables-save" -t filter)
-    if ! echo "${saved}" | grep -q '^:STDIN-TEST '; then
-	echo "iptables-save through the wrapper did not print the ${mode} rules" 1>&2
-	exit 1
-    fi
-    if echo "${saved}" | grep -q '^:BAD-'; then
-	echo "iptables-save through the wrapper printed the ${wrongmode} rules" 1>&2
-	exit 1
-    fi
+# Further tests; on readonly filesystems (where the main binaries will still be
+# linked to the wrapper at this point), this also confirms that the wrapper
+# handles stdin and stdout correctly.
 
-    ensure_iptables_undecided
-    exit 0
+printf '*filter\n:STDIN-TEST - [0:0]\nCOMMIT\n' | iptables-restore -n
+if ! iptables-${mode}-save -t filter | grep -q '^:STDIN-TEST '; then
+    echo "iptables-restore did not apply its input" 1>&2
+    exit 1
 fi
 
-iptables -L > /dev/null
+rules=$(iptables-save -t filter)
+if ! echo "${rules}" | grep -q '^:STDIN-TEST '; then
+    echo "iptables-save did not print the ${mode} rules" 1>&2
+    exit 1
+fi
+if echo "${rules}" | grep -q '^:BAD-'; then
+    echo "iptables-save printed the ${wrongmode} rules" 1>&2
+    exit 1
+fi
 
-ensure_iptables_resolved ${mode}
+# Ensure that the binary works correctly when invoked by full path
+${sbin}/iptables -L > /dev/null
+
+case ${fs} in
+    "readwrite")
+        ensure_iptables_resolved ${mode}
+        ;;
+    "readonly")
+        ensure_iptables_undecided
+        ;;
+esac
