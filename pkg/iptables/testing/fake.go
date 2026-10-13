@@ -217,7 +217,7 @@ func (f *FakeIPTables) SaveInto(table iptables.Table, buffer *bytes.Buffer) erro
 // This is not a complete list but it's enough to pass the unit tests
 var builtinTargets = set.New("ACCEPT", "DROP", "RETURN", "REJECT", "DNAT", "SNAT", "MASQUERADE", "MARK")
 
-func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table, flush iptables.FlushFlag, counters iptables.RestoreCountersFlag) error {
+func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table) error {
 	oldTable, err := f.Dump.GetTable(newTable.Name)
 	if err != nil {
 		return err
@@ -227,9 +227,6 @@ func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table, flus
 	copy(backupChains, oldTable.Chains)
 
 	// Update internal state
-	if flush == iptables.FlushTables {
-		oldTable.Chains = make([]Chain, 0, len(newTable.Chains))
-	}
 	for _, newChain := range newTable.Chains {
 		oldChain, _ := f.Dump.GetChain(newTable.Name, newChain.Name)
 		switch {
@@ -240,12 +237,7 @@ func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table, flus
 		case oldChain != nil && newChain.Deleted:
 			_ = f.DeleteChain(newTable.Name, newChain.Name)
 		case oldChain != nil && !newChain.Deleted:
-			// replace old data with new
 			oldChain.Rules = newChain.Rules
-			if counters == iptables.RestoreCounters {
-				oldChain.Packets = newChain.Packets
-				oldChain.Bytes = newChain.Bytes
-			}
 		}
 	}
 
@@ -281,29 +273,14 @@ func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table, flus
 }
 
 // Restore is part of iptables.Interface
-func (f *FakeIPTables) Restore(table iptables.Table, data []byte, flush iptables.FlushFlag, counters iptables.RestoreCountersFlag) error {
-	dump, err := ParseIPTablesDump(string(data))
-	if err != nil {
-		return err
-	}
-
-	newTable, err := dump.GetTable(table)
-	if err != nil {
-		return err
-	}
-
-	return f.restoreTable(dump, newTable, flush, counters)
-}
-
-// RestoreAll is part of iptables.Interface
-func (f *FakeIPTables) RestoreAll(data []byte, flush iptables.FlushFlag, counters iptables.RestoreCountersFlag) error {
+func (f *FakeIPTables) Restore(data []byte) error {
 	dump, err := ParseIPTablesDump(string(data))
 	if err != nil {
 		return err
 	}
 
 	for i := range dump.Tables {
-		err = f.restoreTable(dump, &dump.Tables[i], flush, counters)
+		err = f.restoreTable(dump, &dump.Tables[i])
 		if err != nil {
 			return err
 		}

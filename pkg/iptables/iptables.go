@@ -62,13 +62,8 @@ type Interface interface {
 	// SaveInto calls `iptables-save` for table and stores result in a given buffer.
 	SaveInto(table Table, buffer *bytes.Buffer) error
 	// Restore runs `iptables-restore` passing data through []byte.
-	// table is the Table to restore
 	// data should be formatted like the output of SaveInto()
-	// flush sets the presence of the "--noflush" flag. see: FlushFlag
-	// counters sets the "--counters" flag. see: RestoreCountersFlag
-	Restore(table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error
-	// RestoreAll is the same as Restore except that no table is specified.
-	RestoreAll(data []byte, flush FlushFlag, counters RestoreCountersFlag) error
+	Restore(data []byte) error
 
 	// Monitor detects when the given iptables tables have been flushed by an external
 	// tool (e.g. a firewall reload) by creating canary chains and polling to see if
@@ -139,24 +134,6 @@ const (
 	cmdIP6TablesSave    string = "ip6tables-save"
 	cmdIP6Tables        string = "ip6tables"
 )
-
-// RestoreCountersFlag is an option flag for Restore
-type RestoreCountersFlag bool
-
-// RestoreCounters a boolean true constant for the option flag RestoreCountersFlag
-const RestoreCounters RestoreCountersFlag = true
-
-// NoRestoreCounters a boolean false constant for the option flag RestoreCountersFlag
-const NoRestoreCounters RestoreCountersFlag = false
-
-// FlushFlag an option flag for Flush
-type FlushFlag bool
-
-// FlushTables a boolean true constant for option flag FlushFlag
-const FlushTables FlushFlag = true
-
-// NoFlushTables a boolean false constant for option flag FlushFlag
-const NoFlushTables FlushFlag = false
 
 // WaitString a constant for specifying the wait flag
 const WaitString = "-w"
@@ -338,36 +315,15 @@ func (ipt *runner) SaveInto(table Table, buffer *bytes.Buffer) error {
 }
 
 // Restore is part of Interface.
-func (ipt *runner) Restore(table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
-	// setup args
-	args := []string{"-T", string(table)}
-	return ipt.restoreInternal(args, data, flush, counters)
-}
-
-// RestoreAll is part of Interface.
-func (ipt *runner) RestoreAll(data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
-	// setup args
-	args := make([]string, 0)
-	return ipt.restoreInternal(args, data, flush, counters)
-}
-
-// restoreInternal is the shared part of Restore/RestoreAll
-func (ipt *runner) restoreInternal(args []string, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
+func (ipt *runner) Restore(data []byte) error {
 	trace := utiltrace.New("iptables restore")
 	defer trace.LogIfLong(2 * time.Second)
 
-	if !flush {
-		args = append(args, "--noflush")
-	}
-	if counters {
-		args = append(args, "--counters")
-	}
-
 	// run the command and return the output or an error including the output and error
-	fullArgs := append([]string{WaitString, WaitSecondsValue}, args...)
+	args := []string{"--noflush", WaitString, WaitSecondsValue}
 	iptablesRestoreCmd := iptablesRestoreCommand(ipt.protocol)
-	klog.V(4).InfoS("Running", "command", iptablesRestoreCmd, "arguments", fullArgs)
-	cmd := ipt.exec.Command(iptablesRestoreCmd, fullArgs...)
+	klog.V(4).InfoS("Running", "command", iptablesRestoreCmd, "arguments", args)
+	cmd := ipt.exec.Command(iptablesRestoreCmd, args...)
 	cmd.SetStdin(bytes.NewBuffer(data))
 	b, err := cmd.CombinedOutput()
 	if err != nil {

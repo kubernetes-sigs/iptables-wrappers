@@ -180,12 +180,12 @@ func TestFakeIPTables(t *testing.T) {
 		-A KUBE-MISC-TWO -j ACCEPT
 		COMMIT
 		`, "\n"))
-	err = fake.Restore(iptables.TableNAT, []byte(rules), iptables.NoFlushTables, iptables.NoRestoreCounters)
+	err = fake.Restore([]byte(rules))
 	if err != nil {
 		t.Fatalf("unexpected error from Restore: %v", err)
 	}
 
-	// We used NoFlushTables, so this should leave KUBE-TEST unchanged
+	// This should leave KUBE-TEST unchanged
 	buf.Reset()
 	err = fake.SaveInto("", buf)
 	if err != nil {
@@ -227,7 +227,7 @@ func TestFakeIPTables(t *testing.T) {
 		-X KUBE-MISC-TWO
 		COMMIT
 		`, "\n"))
-	err = fake.Restore(iptables.TableNAT, []byte(rules), iptables.NoFlushTables, iptables.RestoreCounters)
+	err = fake.Restore([]byte(rules))
 	if err == nil || !strings.Contains(err.Error(), "referenced by existing rules") {
 		t.Fatalf("Expected 'referenced by existing rules' error from Restore, got %v", err)
 	}
@@ -239,12 +239,13 @@ func TestFakeIPTables(t *testing.T) {
 		-A KUBE-MISC-TWO -j KUBE-MISC-THREE
 		COMMIT
 		`, "\n"))
-	err = fake.Restore(iptables.TableNAT, []byte(rules), iptables.NoFlushTables, iptables.RestoreCounters)
+	err = fake.Restore([]byte(rules))
 	if err == nil || !strings.Contains(err.Error(), "non-existent chain") {
 		t.Fatalf("Expected 'non-existent chain' error from Restore, got %v", err)
 	}
 
-	// more Restore; empty out one chain and delete another, but also update its counters
+	// more Restore; empty out one chain and delete another. Confirm that counters
+	// are accepted but ignored.
 	rules = dedent.Dedent(strings.Trim(`
 		*nat
 		:KUBE-RESTORED - [0:0]
@@ -252,7 +253,7 @@ func TestFakeIPTables(t *testing.T) {
 		-X KUBE-RESTORED
 		COMMIT
 		`, "\n"))
-	err = fake.Restore(iptables.TableNAT, []byte(rules), iptables.NoFlushTables, iptables.RestoreCounters)
+	err = fake.Restore([]byte(rules))
 	if err != nil {
 		t.Fatalf("unexpected error from Restore: %v", err)
 	}
@@ -268,7 +269,7 @@ func TestFakeIPTables(t *testing.T) {
 		:INPUT - [0:0]
 		:OUTPUT - [0:0]
 		:POSTROUTING - [0:0]
-		:KUBE-TEST - [99:9999]
+		:KUBE-TEST - [0:0]
 		:KUBE-MISC-CHAIN - [0:0]
 		:KUBE-MISC-TWO - [0:0]
 		:KUBE-EMPTY - [0:0]
@@ -288,7 +289,7 @@ func TestFakeIPTables(t *testing.T) {
 		t.Fatalf("bad post-second-restore dump. expected:\n%s\n\ngot:\n%s\n", expected, buf.Bytes())
 	}
 
-	// RestoreAll, FlushTables
+	// Multi-tables Restore
 	rules = dedent.Dedent(strings.Trim(`
 		*filter
 		:INPUT - [0:0]
@@ -309,7 +310,7 @@ func TestFakeIPTables(t *testing.T) {
 		-A KUBE-NEW-CHAIN -d 172.30.0.3 -j DNAT --to-destination 10.0.0.3
 		COMMIT
 		`, "\n"))
-	err = fake.RestoreAll([]byte(rules), iptables.FlushTables, iptables.NoRestoreCounters)
+	err = fake.Restore([]byte(rules))
 	if err != nil {
 		t.Fatalf("unexpected error from RestoreAll: %v", err)
 	}
@@ -325,8 +326,14 @@ func TestFakeIPTables(t *testing.T) {
 		:INPUT - [0:0]
 		:OUTPUT - [0:0]
 		:POSTROUTING - [0:0]
-		:KUBE-TEST - [88:8888]
+		:KUBE-TEST - [0:0]
+		:KUBE-MISC-CHAIN - [0:0]
+		:KUBE-MISC-TWO - [0:0]
+		:KUBE-EMPTY - [0:0]
 		:KUBE-NEW-CHAIN - [0:0]
+		-A KUBE-MISC-CHAIN -s 1.2.3.4 -j KUBE-MISC-TWO
+		-A KUBE-MISC-CHAIN -d 5.6.7.8 -j MASQUERADE
+		-A KUBE-MISC-TWO -j ACCEPT
 		-A KUBE-NEW-CHAIN -d 172.30.0.1 -j DNAT --to-destination 10.0.0.1
 		-A KUBE-NEW-CHAIN -d 172.30.0.2 -j DNAT --to-destination 10.0.0.2
 		-A KUBE-NEW-CHAIN -d 172.30.0.3 -j DNAT --to-destination 10.0.0.3
