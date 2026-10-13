@@ -626,9 +626,6 @@ func testRestore(t *testing.T, protocol Protocol) {
 	fcmd := fakeexec.FakeCmd{
 		CombinedOutputScript: []fakeexec.FakeAction{
 			func() ([]byte, []byte, error) { return []byte{}, nil, nil },
-			func() ([]byte, []byte, error) { return []byte{}, nil, nil },
-			func() ([]byte, []byte, error) { return []byte{}, nil, nil },
-			func() ([]byte, []byte, error) { return []byte{}, nil, nil },
 			func() ([]byte, []byte, error) { return nil, nil, &fakeexec.FakeExitError{Status: 1} },
 		},
 	}
@@ -636,68 +633,24 @@ func testRestore(t *testing.T, protocol Protocol) {
 		CommandScript: []fakeexec.FakeCommandAction{
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
-			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
-			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
-			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
 	runner := newInternal(fexec, protocol)
 	numCalls := 0
 
-	// both flags true
-	err := runner.Restore(TableNAT, []byte{}, FlushTables, RestoreCounters)
+	err := runner.Restore([]byte{})
 	if err != nil {
-		t.Errorf("%s flush,restore: Expected success, got %v", protocol, err)
+		t.Errorf("%s: Expected success, got %v", protocol, err)
 	}
 
 	numCalls++
 	commandSet := set.New(fcmd.CombinedOutputLog[numCalls-1]...)
-	if !commandSet.HasAll(iptablesRestoreCmd, "-T", string(TableNAT), "--counters") || commandSet.HasAny("--noflush") {
-		t.Errorf("%s flush, restore: Expected cmd containing '%s -T %s --counters', got '%s'", protocol, iptablesRestoreCmd, string(TableNAT), fcmd.CombinedOutputLog[numCalls-1])
-	}
-
-	// FlushTables, NoRestoreCounters
-	err = runner.Restore(TableNAT, []byte{}, FlushTables, NoRestoreCounters)
-	if err != nil {
-		t.Errorf("%s flush, no restore: Expected success, got %v", protocol, err)
-	}
-	numCalls++
-
-	commandSet = set.New(fcmd.CombinedOutputLog[numCalls-1]...)
-	if !commandSet.HasAll(iptablesRestoreCmd, "-T", string(TableNAT)) || commandSet.HasAny("--noflush", "--counters") {
-		t.Errorf("%s flush, no restore: Expected cmd containing '--noflush' or '--counters', got '%s'", protocol, fcmd.CombinedOutputLog[numCalls-1])
-	}
-
-	// NoFlushTables, RestoreCounters
-	err = runner.Restore(TableNAT, []byte{}, NoFlushTables, RestoreCounters)
-	if err != nil {
-		t.Errorf("%s no flush, restore: Expected success, got %v", protocol, err)
-	}
-	numCalls++
-
-	commandSet = set.New(fcmd.CombinedOutputLog[numCalls-1]...)
-	if !commandSet.HasAll(iptablesRestoreCmd, "-T", string(TableNAT), "--noflush", "--counters") {
-		t.Errorf("%s no flush, restore: Expected cmd containing '--noflush' and '--counters', got '%s'", protocol, fcmd.CombinedOutputLog[numCalls-1])
-	}
-
-	// NoFlushTables, NoRestoreCounters
-	err = runner.Restore(TableNAT, []byte{}, NoFlushTables, NoRestoreCounters)
-	if err != nil {
-		t.Errorf("%s no flush, no restore: Expected success, got %v", protocol, err)
-	}
-	numCalls++
-
-	commandSet = set.New(fcmd.CombinedOutputLog[numCalls-1]...)
-	if !commandSet.HasAll(iptablesRestoreCmd, "-T", string(TableNAT), "--noflush") || commandSet.HasAny("--counters") {
-		t.Errorf("%s no flush, no restore: Expected cmd containing '%s -T %s --noflush', got '%s'", protocol, iptablesRestoreCmd, string(TableNAT), fcmd.CombinedOutputLog[numCalls-1])
-	}
-
-	if fcmd.CombinedOutputCalls != numCalls {
-		t.Errorf("%s: Expected %d total CombinedOutput() calls, got %d", protocol, numCalls, fcmd.CombinedOutputCalls)
+	if !commandSet.HasAll(iptablesRestoreCmd, "--noflush") {
+		t.Errorf("%s: Expected cmd containing '%s --noflush', got '%s'", protocol, iptablesRestoreCmd, fcmd.CombinedOutputLog[numCalls-1])
 	}
 
 	// Failure.
-	err = runner.Restore(TableNAT, []byte{}, FlushTables, RestoreCounters)
+	err = runner.Restore([]byte{})
 	if err == nil {
 		t.Errorf("%s Expected a failure", protocol)
 	}
@@ -709,44 +662,6 @@ func TestRestoreIPv4(t *testing.T) {
 
 func TestRestoreIPv6(t *testing.T) {
 	testRestore(t, ProtocolIPv6)
-}
-
-// TestRestoreAll tests only the simplest use case, as flag handling code is already tested in TestRestore
-func TestRestoreAll(t *testing.T) {
-	fcmd := fakeexec.FakeCmd{
-		CombinedOutputScript: []fakeexec.FakeAction{
-			func() ([]byte, []byte, error) { return []byte{}, nil, nil },
-			func() ([]byte, []byte, error) { return nil, nil, &fakeexec.FakeExitError{Status: 1} },
-		},
-	}
-	fexec := &fakeexec.FakeExec{
-		CommandScript: []fakeexec.FakeCommandAction{
-			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
-			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
-		},
-	}
-	runner := newInternal(fexec, ProtocolIPv4)
-
-	err := runner.RestoreAll([]byte{}, NoFlushTables, RestoreCounters)
-	if err != nil {
-		t.Fatalf("expected success, got %v", err)
-	}
-
-	numCalls := len(fcmd.CombinedOutputScript) - 1
-	if fcmd.CombinedOutputCalls != numCalls {
-		t.Errorf("expected %d CombinedOutput() calls, got %d", numCalls, fcmd.CombinedOutputCalls)
-	}
-
-	commandSet := set.New(fcmd.CombinedOutputLog[numCalls-1]...)
-	if !commandSet.HasAll("iptables-restore", "--counters", "--noflush") {
-		t.Errorf("wrong CombinedOutput() log, got %s", fcmd.CombinedOutputLog[numCalls-1])
-	}
-
-	// Failure.
-	err = runner.Restore(TableNAT, []byte{}, FlushTables, RestoreCounters)
-	if err == nil {
-		t.Errorf("expected failure")
-	}
 }
 
 // TestExtractLines tests that
