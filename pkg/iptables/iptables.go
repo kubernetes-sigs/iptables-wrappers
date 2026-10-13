@@ -41,9 +41,6 @@ type Interface interface {
 	// Protocol returns the IP family this instance is managing,
 	Protocol() Protocol
 
-	// Present checks if the kernel supports the iptable interface
-	Present() error
-
 	// EnsureChain checks if the specified chain exists and, if not, creates it.  If the chain existed, return true.
 	EnsureChain(table Table, chain Chain) (bool, error)
 	// FlushChain clears the specified chain.  If the chain did not exist, return error.
@@ -148,31 +145,30 @@ type runner struct {
 }
 
 // newInternal returns a new Interface which will exec iptables
-func newInternal(exec utilexec.Interface, protocol Protocol) Interface {
+func newInternal(exec utilexec.Interface, protocol Protocol) (*runner, error) {
 	ipt := &runner{
 		exec:     exec,
 		protocol: protocol,
 	}
-
-	return ipt
+	if _, err := ipt.ChainExists(TableNAT, ChainPostrouting); err != nil {
+		return nil, err
+	}
+	return ipt, nil
 }
 
-// New returns a new Interface which will exec iptables.
-// Note that this function will return a single iptables Interface *and* an error, if only
-// a single family is supported.
-func New(protocol Protocol) Interface {
+// New returns a new Interface which will exec iptables. If the necessary iptables binary
+// is not present or doesn't work, this will return an error.
+func New(protocol Protocol) (Interface, error) {
 	return newInternal(utilexec.New(), protocol)
 }
 
 func newDualStackInternal(exec utilexec.Interface) map[Protocol]Interface {
 	interfaces := map[Protocol]Interface{}
-	iptv4 := newInternal(exec, ProtocolIPv4)
-	if presentErr := iptv4.Present(); presentErr == nil {
-		interfaces[ProtocolIPv4] = iptv4
+	if ipt, err := newInternal(exec, ProtocolIPv4); err == nil {
+		interfaces[ProtocolIPv4] = ipt
 	}
-	iptv6 := newInternal(exec, ProtocolIPv6)
-	if presentErr := iptv6.Present(); presentErr == nil {
-		interfaces[ProtocolIPv6] = iptv6
+	if ipt, err := newInternal(exec, ProtocolIPv6); err == nil {
+		interfaces[ProtocolIPv6] = ipt
 	}
 	return interfaces
 }
@@ -194,15 +190,6 @@ func (ipt *runner) IsIPv6() bool {
 // Protocol is part of Interface.
 func (ipt *runner) Protocol() Protocol {
 	return ipt.protocol
-}
-
-// Present tests if iptable is supported on current kernel by checking the existence
-// of default table and chain
-func (ipt *runner) Present() error {
-	if _, err := ipt.ChainExists(TableNAT, ChainPostrouting); err != nil {
-		return err
-	}
-	return nil
 }
 
 // EnsureChain is part of Interface.

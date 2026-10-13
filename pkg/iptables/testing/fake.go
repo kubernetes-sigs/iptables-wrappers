@@ -292,8 +292,4 @@ func (f *FakeIPTables) Restore(data []byte) error {
 func (f *FakeIPTables) Monitor(canary iptables.Chain, tables []iptables.Table, reloadFunc func(), interval time.Duration, stopCh <-chan struct{}) {
 }
 
-func (f *FakeIPTables) Present() error {
-	return nil
-}
-
 var _ = iptables.Interface(&FakeIPTables{})
