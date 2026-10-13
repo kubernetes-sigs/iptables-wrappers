@@ -62,7 +62,7 @@ func NewExecWrapper(ctx context.Context, execer utilexec.Interface) (*ExecWrappe
 		return nil, err
 	}
 
-	mode, err := DetectMode(ctx, execer, sbinDir)
+	mode, err := DetectMode(ctx, execer)
 	if err != nil {
 		return nil, err
 	}

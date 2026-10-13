@@ -309,13 +309,32 @@ func TestDetectMode(t *testing.T) {
 			},
 			mode: LegacyMode,
 		},
+		{
+			name:        "Can't detect sbindir",
+			notFoundStr: "/sbin",
+			commands: []testCommand{
+				{
+					command: "iptables-nft-save -t mangle",
+					stdout:  "",
+				},
+				{
+					command: "ip6tables-nft-save -t mangle",
+					stdout:  "",
+				},
+				{
+					command: "iptables-legacy-save",
+					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+				},
+			},
+			mode: LegacyMode,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForCommands(tc.commands, tc.notFoundStr)
 
-			mode, err := DetectMode(t.Context(), fexec, "/sbin")
+			mode, err := DetectMode(t.Context(), fexec)
 			if mode != tc.mode {
 				t.Errorf("Expected mode %q got %q", tc.mode, mode)
 			}
@@ -386,7 +405,7 @@ func Test_execAndScanForKubeletChains(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForReader(tc.buf)
-			mode, err := DetectMode(t.Context(), fexec, "/sbin")
+			mode, err := DetectMode(t.Context(), fexec)
 			if mode != NFTMode {
 				t.Errorf("Expected mode %q got %q", NFTMode, mode)
 			}
