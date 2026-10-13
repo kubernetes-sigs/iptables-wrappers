@@ -99,7 +99,7 @@ func (mfc *monitorFakeCmd) CombinedOutput() ([]byte, error) {
 		return []byte("iptables v1.6.2"), nil
 	}
 
-	if len(mfc.args) != 6 || mfc.args[0] != WaitString || mfc.args[1] != WaitSecondsValue || mfc.args[4] != "-t" {
+	if len(mfc.args) != 6 || mfc.args[0] != waitString || mfc.args[1] != waitSecondsValue || mfc.args[4] != "-t" {
 		panic(fmt.Sprintf("bad args %#v", mfc.args))
 	}
 	op := operation(mfc.args[2])
