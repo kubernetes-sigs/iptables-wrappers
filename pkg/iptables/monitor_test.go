@@ -49,7 +49,7 @@ func newMonitorFakeExec() *monitorFakeExec {
 	tables := make(map[string]set.Set[string])
 	tables["mangle"] = set.New[string]()
 	tables["filter"] = set.New[string]()
-	tables["nat"] = set.New[string]()
+	tables["nat"] = set.New[string]("POSTROUTING")
 	return &monitorFakeExec{tables: tables}
 }
 
@@ -88,15 +88,8 @@ type monitorFakeCmd struct {
 }
 
 func (mfc *monitorFakeCmd) CombinedOutput() ([]byte, error) {
-	if mfc.cmd == cmdIPTablesRestore {
-		// Only used for "iptables-restore --version", and the result doesn't matter
-		return []byte{}, nil
-	} else if mfc.cmd != cmdIPTables {
+	if mfc.cmd != cmdIPTables {
 		panic("bad command " + mfc.cmd)
-	}
-
-	if len(mfc.args) == 1 && mfc.args[0] == "--version" {
-		return []byte("iptables v1.6.2"), nil
 	}
 
 	if len(mfc.args) != 6 || mfc.args[0] != waitString || mfc.args[1] != waitSecondsValue || mfc.args[4] != "-t" {
@@ -189,7 +182,10 @@ func (mfc *monitorFakeCmd) Stop() {
 
 func TestIPTablesMonitor(t *testing.T) {
 	mfe := newMonitorFakeExec()
-	ipt := newInternal(mfe, ProtocolIPv4)
+	ipt, err := newInternal(mfe, ProtocolIPv4)
+	if err != nil {
+		t.Fatalf("Failed to create iptables runner: %v", err)
+	}
 
 	var reloads uint32
 	stopCh := make(chan struct{})
@@ -321,7 +317,7 @@ func ensureNoChains(mfe *monitorFakeExec) bool {
 	defer mfe.Unlock()
 	return mfe.tables["mangle"].Len() == 0 &&
 		mfe.tables["filter"].Len() == 0 &&
-		mfe.tables["nat"].Len() == 0
+		mfe.tables["nat"].Len() == 1 // POSTROUTING
 }
 
 func waitForReloads(reloads *uint32, expected uint32) error {
