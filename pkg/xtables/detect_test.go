@@ -18,9 +18,12 @@ package xtables
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	utilexec "k8s.io/utils/exec"
@@ -117,7 +120,7 @@ func fakeExecForCommands(commands []testCommand, notFoundStr string) *fakeexec.F
 	return fexec
 }
 
-func TestDetectMode(t *testing.T) {
+func Test_realDetectMode(t *testing.T) {
 	testCases := []struct {
 		name        string
 		notFoundStr string
@@ -377,7 +380,7 @@ func TestDetectMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForCommands(tc.commands, tc.notFoundStr)
 
-			mode, err := DetectMode(t.Context(), fexec)
+			mode, err := realDetectMode(t.Context(), fexec)
 			if mode != tc.mode {
 				t.Errorf("Expected mode %q got %q", tc.mode, mode)
 			}
@@ -388,6 +391,105 @@ func TestDetectMode(t *testing.T) {
 				t.Errorf("Expected an error, but didn't get one")
 			}
 		})
+	}
+}
+
+func TestDetectModeParallel(t *testing.T) {
+	commands := []testCommand{
+		{
+			command: "/sbin/iptables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/ip6tables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/iptables-legacy-save",
+			stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+		},
+	}
+
+	unDetectMode()
+
+	var fexecs [10]*fakeexec.FakeExec
+	var modes [10]Mode
+	for i := range fexecs {
+		fexecs[i] = fakeExecForCommands(commands, "")
+	}
+	wg := sync.WaitGroup{}
+	for i := range modes {
+		wg.Go(func() { modes[i], _ = DetectMode(t.Context(), fexecs[i]) })
+	}
+	wg.Wait()
+
+	foundExec := false
+	for i := range 10 {
+		if modes[i] != LegacyMode {
+			t.Errorf("Expected call %d to DetectMode to return %q, got %q", i+1, LegacyMode, modes[i])
+		}
+		if fexecs[i].CommandCalls == 3 {
+			t.Logf("DetectMode call %d executed iptables", i)
+			if foundExec {
+				t.Errorf("Multiple DetectMode calls executed iptables")
+			}
+			foundExec = true
+		} else if fexecs[i].CommandCalls != 0 {
+			t.Errorf("DetectMode call %d executed %d iptables commands", i, fexecs[i].CommandCalls)
+		}
+	}
+	if !foundExec {
+		t.Errorf("No DetectMode call executed iptables")
+	}
+}
+
+func TestDetectModeCancel(t *testing.T) {
+	nftCommands := []testCommand{
+		{
+			command: "/sbin/iptables-nft-save -t mangle",
+			stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+		},
+	}
+	legacyCommands := []testCommand{
+		{
+			command: "/sbin/iptables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/ip6tables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/iptables-legacy-save",
+			stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+		},
+	}
+
+	unDetectMode()
+
+	// Try detecting with a pre-cancelled context.
+	// NB: FakeExec ignores ctx, so we have to actually pass commands that will result
+	// in NFTMode being picked. But DetectMode() itself will notice the cancelled
+	// context after realDetectMode() returns and not update detectedMode.
+	fexec := fakeExecForCommands(nftCommands, "")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	mode, err := DetectMode(ctx, fexec)
+	if mode != NFTMode {
+		t.Errorf("Expected cancelled DetectMode call to return %s, got %s", NFTMode, mode)
+	}
+	if !errors.Is(err, ctx.Err()) {
+		t.Errorf("Expected cancelled DetectMode to return wrapped error %T %q, got %T %q", ctx.Err(), ctx.Err().Error(), err, err.Error())
+	}
+
+	// Try again; should re-run realDetectMode with the new commands.
+	fexec = fakeExecForCommands(legacyCommands, "")
+	mode, err = DetectMode(t.Context(), fexec)
+	if mode != LegacyMode {
+		t.Errorf("Expected call to DetectMode after cancelled call to return %s, got %s", LegacyMode, mode)
+	}
+	if err != nil {
+		t.Errorf("Expected no error but got %v", err)
 	}
 }
 
@@ -429,7 +531,7 @@ func Test_execAndScanForKubeletChains(t *testing.T) {
 		}
 
 		fexec := fakeExecForReader(buf)
-		mode, err := DetectMode(t.Context(), fexec)
+		mode, err := realDetectMode(t.Context(), fexec)
 		if mode != NFTMode {
 			t.Errorf("Expected mode %q got %q", NFTMode, mode)
 		}
@@ -449,7 +551,7 @@ func Test_execAndScanForKubeletChains(t *testing.T) {
 		}
 
 		fexec := fakeExecForReader(buf)
-		mode, err := DetectMode(t.Context(), fexec)
+		mode, err := realDetectMode(t.Context(), fexec)
 		if mode != UnknownMode {
 			t.Errorf("Expected mode %q got %q", UnknownMode, mode)
 		}

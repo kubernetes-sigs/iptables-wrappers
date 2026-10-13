@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	utilexec "k8s.io/utils/exec"
 )
@@ -36,9 +37,37 @@ func DetectBinaryDir(execer utilexec.Interface) (string, error) {
 	}
 }
 
-// DetectMode returns the best guess about the current iptables mode. If it is unable to
-// make a guess, it will return UnknownMode and an error.
+var detectMutex sync.Mutex
+var detectedMode Mode
+
+// DetectMode returns the best guess about the current iptables mode.
+//
+// The first time it is called, it uses execer to run iptables-legacy and iptables-nft. If
+// it is unable to make a guess, it will return UnknownMode and an error.
+//
+// After successfully determining the mode once, if it is called again after that, it just
+// returns the cached value from the previous check.
 func DetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
+	detectMutex.Lock()
+	defer detectMutex.Unlock()
+
+	var err error
+	mode := detectedMode
+	if mode == "" {
+		mode, err = realDetectMode(ctx, execer)
+		if ctx.Err() != nil {
+			// realDetectMode will have ignored the errors and returned a guess
+			// anyway, but in this case, the context error is more relevant.
+			err = fmt.Errorf("unable to detect iptables mode: %w", ctx.Err())
+		}
+		if err == nil {
+			detectedMode = mode
+		}
+	}
+	return mode, err
+}
+
+func realDetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
 	// If DetectBinaryDir() fails then sbinPath will be "". Since filepath.Join()
 	// ignores empty strings, this means we will end up just using the plain binary
 	// names and falling back to searching $PATH.
@@ -85,6 +114,13 @@ func DetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
 
 	// Detection failed.
 	return UnknownMode, fmt.Errorf("unable to determine system iptables mode; could not find any kubelet iptables chains")
+}
+
+// for unit tests
+func unDetectMode() {
+	detectMutex.Lock()
+	defer detectMutex.Unlock()
+	detectedMode = ""
 }
 
 // Especially on a restart, there may already be lots of iptables rules, so rather than
