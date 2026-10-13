@@ -126,6 +126,7 @@ func TestExecWrapper(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			unDetectMode()
 			fexec := fakeExecForCommands(tc.setupCommands, "")
 			xt, err := NewExecWrapper(t.Context(), fexec)
 			if err != nil {
