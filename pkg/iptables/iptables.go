@@ -135,11 +135,11 @@ const (
 	cmdIP6Tables        string = "ip6tables"
 )
 
-// WaitString a constant for specifying the wait flag
-const WaitString = "-w"
+// waitString a constant for specifying the wait flag
+const waitString = "-w"
 
-// WaitSecondsValue a constant for specifying the default wait seconds
-const WaitSecondsValue = "5"
+// waitSecondsValue a constant for specifying the default wait seconds
+const waitSecondsValue = "5"
 
 // runner implements Interface in terms of exec("iptables").
 type runner struct {
@@ -320,7 +320,7 @@ func (ipt *runner) Restore(data []byte) error {
 	defer trace.LogIfLong(2 * time.Second)
 
 	// run the command and return the output or an error including the output and error
-	args := []string{"--noflush", WaitString, WaitSecondsValue}
+	args := []string{"--noflush", waitString, waitSecondsValue}
 	iptablesRestoreCmd := iptablesRestoreCommand(ipt.protocol)
 	klog.V(4).InfoS("Running", "command", iptablesRestoreCmd, "arguments", args)
 	cmd := ipt.exec.Command(iptablesRestoreCmd, args...)
@@ -363,7 +363,7 @@ func (ipt *runner) run(op operation, args []string) ([]byte, error) {
 
 func (ipt *runner) runContext(ctx context.Context, op operation, args []string) ([]byte, error) {
 	iptablesCmd := iptablesCommand(ipt.protocol)
-	fullArgs := append([]string{WaitString, WaitSecondsValue, string(op)}, args...)
+	fullArgs := append([]string{waitString, waitSecondsValue, string(op)}, args...)
 	klog.V(5).InfoS("Running", "command", iptablesCmd, "arguments", fullArgs)
 	if ctx == nil {
 		return ipt.exec.Command(iptablesCmd, fullArgs...).CombinedOutput()
