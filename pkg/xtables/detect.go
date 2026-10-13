@@ -38,7 +38,12 @@ func DetectBinaryDir(execer utilexec.Interface) (string, error) {
 
 // DetectMode returns the best guess about the current iptables mode. If it is unable to
 // make a guess, it will return UnknownMode and an error.
-func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string) (Mode, error) {
+func DetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
+	// If DetectBinaryDir() fails then sbinPath will be "". Since filepath.Join()
+	// ignores empty strings, this means we will end up just using the plain binary
+	// names and falling back to searching $PATH.
+	sbinPath, _ := DetectBinaryDir(execer)
+
 	// In kubernetes 1.17 and later, kubelet will have created at least
 	// one chain in the "mangle" table (either "KUBE-IPTABLES-HINT" or
 	// "KUBE-KUBELET-CANARY"), so check that first, against

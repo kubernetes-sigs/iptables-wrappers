@@ -70,7 +70,7 @@ func main() {
 		return
 	}
 
-	mode, _ := xtables.DetectMode(ctx, execer, sbinPath)
+	mode, _ := xtables.DetectMode(ctx, execer)
 	if mode == xtables.UnknownMode {
 		// Ignore errors; we don't want to try to re-detect on every iptables
 		// invocation. Just assume the default mode (currently "nft").
