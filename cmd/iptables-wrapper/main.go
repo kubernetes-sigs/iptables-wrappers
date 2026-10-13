@@ -72,7 +72,7 @@ func main() {
 
 	// DetectMode returns a guess for the mode even when it returns an error, so we
 	// just ignore the error here.
-	mode, _ := xtables.DetectMode(ctx, execer, sbinPath)
+	mode, _ := xtables.DetectMode(ctx, execer)
 
 	// Extract the original command and arguments.
 	binaryPath := os.Args[0]
