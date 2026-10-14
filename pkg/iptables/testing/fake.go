@@ -20,6 +20,7 @@ package testing
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -78,7 +79,7 @@ func NewIPv6Fake() *FakeIPTables {
 }
 
 // EnsureChain is part of iptables.Interface
-func (f *FakeIPTables) EnsureChain(table iptables.Table, chain iptables.Chain) (bool, error) {
+func (f *FakeIPTables) EnsureChain(_ context.Context, table iptables.Table, chain iptables.Chain) (bool, error) {
 	t, err := f.Dump.GetTable(table)
 	if err != nil {
 		return false, err
@@ -91,7 +92,7 @@ func (f *FakeIPTables) EnsureChain(table iptables.Table, chain iptables.Chain) (
 }
 
 // FlushChain is part of iptables.Interface
-func (f *FakeIPTables) FlushChain(table iptables.Table, chain iptables.Chain) error {
+func (f *FakeIPTables) FlushChain(_ context.Context, table iptables.Table, chain iptables.Chain) error {
 	if c, _ := f.Dump.GetChain(table, chain); c != nil {
 		c.Rules = nil
 	}
@@ -99,7 +100,7 @@ func (f *FakeIPTables) FlushChain(table iptables.Table, chain iptables.Chain) er
 }
 
 // DeleteChain is part of iptables.Interface
-func (f *FakeIPTables) DeleteChain(table iptables.Table, chain iptables.Chain) error {
+func (f *FakeIPTables) DeleteChain(_ context.Context, table iptables.Table, chain iptables.Chain) error {
 	t, err := f.Dump.GetTable(table)
 	if err != nil {
 		return err
@@ -114,7 +115,7 @@ func (f *FakeIPTables) DeleteChain(table iptables.Table, chain iptables.Chain) e
 }
 
 // ChainExists is part of iptables.Interface
-func (f *FakeIPTables) ChainExists(table iptables.Table, chain iptables.Chain) (bool, error) {
+func (f *FakeIPTables) ChainExists(_ context.Context, table iptables.Table, chain iptables.Chain) (bool, error) {
 	if _, err := f.Dump.GetTable(table); err != nil {
 		return false, err
 	}
@@ -125,7 +126,7 @@ func (f *FakeIPTables) ChainExists(table iptables.Table, chain iptables.Chain) (
 }
 
 // EnsureRule is part of iptables.Interface
-func (f *FakeIPTables) EnsureRule(position iptables.RulePosition, table iptables.Table, chain iptables.Chain, args ...string) (bool, error) {
+func (f *FakeIPTables) EnsureRule(_ context.Context, position iptables.RulePosition, table iptables.Table, chain iptables.Chain, args ...string) (bool, error) {
 	c, err := f.Dump.GetChain(table, chain)
 	if err != nil {
 		return false, err
@@ -152,7 +153,7 @@ func (f *FakeIPTables) EnsureRule(position iptables.RulePosition, table iptables
 }
 
 // DeleteRule is part of iptables.Interface
-func (f *FakeIPTables) DeleteRule(table iptables.Table, chain iptables.Chain, args ...string) error {
+func (f *FakeIPTables) DeleteRule(_ context.Context, table iptables.Table, chain iptables.Chain, args ...string) error {
 	c, err := f.Dump.GetChain(table, chain)
 	if err != nil {
 		return err
@@ -198,7 +199,7 @@ func (f *FakeIPTables) saveTable(table iptables.Table, buffer *bytes.Buffer) err
 }
 
 // SaveInto is part of iptables.Interface
-func (f *FakeIPTables) SaveInto(table iptables.Table, buffer *bytes.Buffer) error {
+func (f *FakeIPTables) SaveInto(_ context.Context, table iptables.Table, buffer *bytes.Buffer) error {
 	if table == "" {
 		// As a secret extension to the API, FakeIPTables treats table="" as
 		// meaning "all tables"
@@ -217,7 +218,7 @@ func (f *FakeIPTables) SaveInto(table iptables.Table, buffer *bytes.Buffer) erro
 // This is not a complete list but it's enough to pass the unit tests
 var builtinTargets = set.New("ACCEPT", "DROP", "RETURN", "REJECT", "DNAT", "SNAT", "MASQUERADE", "MARK")
 
-func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table) error {
+func (f *FakeIPTables) restoreTable(ctx context.Context, newDump *IPTablesDump, newTable *Table) error {
 	oldTable, err := f.Dump.GetTable(newTable.Name)
 	if err != nil {
 		return err
@@ -235,7 +236,7 @@ func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table) erro
 		case oldChain == nil && !newChain.Deleted:
 			oldTable.Chains = append(oldTable.Chains, newChain)
 		case oldChain != nil && newChain.Deleted:
-			_ = f.DeleteChain(newTable.Name, newChain.Name)
+			_ = f.DeleteChain(ctx, newTable.Name, newChain.Name)
 		case oldChain != nil && !newChain.Deleted:
 			oldChain.Rules = newChain.Rules
 		}
@@ -273,14 +274,14 @@ func (f *FakeIPTables) restoreTable(newDump *IPTablesDump, newTable *Table) erro
 }
 
 // Restore is part of iptables.Interface
-func (f *FakeIPTables) Restore(data []byte) error {
+func (f *FakeIPTables) Restore(ctx context.Context, data []byte) error {
 	dump, err := ParseIPTablesDump(string(data))
 	if err != nil {
 		return err
 	}
 
 	for i := range dump.Tables {
-		err = f.restoreTable(dump, &dump.Tables[i])
+		err = f.restoreTable(ctx, dump, &dump.Tables[i])
 		if err != nil {
 			return err
 		}
@@ -289,7 +290,7 @@ func (f *FakeIPTables) Restore(data []byte) error {
 }
 
 // Monitor is part of iptables.Interface
-func (f *FakeIPTables) Monitor(canary iptables.Chain, tables []iptables.Table, reloadFunc func(), interval time.Duration, stopCh <-chan struct{}) {
+func (f *FakeIPTables) Monitor(_ context.Context, canary iptables.Chain, tables []iptables.Table, reloadFunc func(), interval time.Duration) {
 }
 
 var _ = iptables.Interface(&FakeIPTables{})
