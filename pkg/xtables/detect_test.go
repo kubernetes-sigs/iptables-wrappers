@@ -311,19 +311,65 @@ func TestDetectMode(t *testing.T) {
 			notFoundStr: "/sbin",
 			commands: []testCommand{
 				{
-					command: "iptables-nft-save -t mangle",
+					// Our LookPathFunc will end up claiming the binaries
+					// exist in /bin in this case.
+					command: "/bin/iptables-nft-save -t mangle",
 					stdout:  "",
 				},
 				{
-					command: "ip6tables-nft-save -t mangle",
+					command: "/bin/ip6tables-nft-save -t mangle",
 					stdout:  "",
 				},
 				{
-					command: "iptables-legacy-save",
+					command: "/bin/iptables-legacy-save",
 					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
 				},
 			},
 			mode: LegacyMode,
+		},
+		{
+			name:        "No binaries present",
+			notFoundStr: "tables",
+			commands:    []testCommand{},
+			mode:        UnknownMode,
+		},
+		{
+			name:        "Only nft binaries present",
+			notFoundStr: "legacy",
+			commands:    []testCommand{},
+			mode:        NFTMode,
+		},
+		{
+			name:        "Only legacy binaries present",
+			notFoundStr: "nft",
+			commands:    []testCommand{},
+			mode:        LegacyMode,
+		},
+		{
+			name:        "Only IPv4 binaries present",
+			notFoundStr: "ip6tables",
+			commands: []testCommand{
+				{
+					command: "/sbin/iptables-nft-save -t mangle",
+					stdout:  "",
+				},
+				{
+					command: "/sbin/iptables-legacy-save",
+					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+				},
+			},
+			mode: LegacyMode,
+		},
+		{
+			name:        "Only IPv6 binaries present",
+			notFoundStr: "iptables-",
+			commands: []testCommand{
+				{
+					command: "/sbin/ip6tables-nft-save -t mangle",
+					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+				},
+			},
+			mode: NFTMode,
 		},
 	}
 

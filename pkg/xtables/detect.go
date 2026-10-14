@@ -44,15 +44,31 @@ func DetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
 	// names and falling back to searching $PATH.
 	sbinPath, _ := DetectBinaryDir(execer)
 
+	iptablesLegacySave, _ := execer.LookPath(filepath.Join(sbinPath, "iptables-legacy-save"))
+	ip6tablesLegacySave, _ := execer.LookPath(filepath.Join(sbinPath, "ip6tables-legacy-save"))
+	haveIPTablesLegacy := iptablesLegacySave != "" || ip6tablesLegacySave != ""
+
+	iptablesNFTSave, _ := execer.LookPath(filepath.Join(sbinPath, "iptables-nft-save"))
+	ip6tablesNFTSave, _ := execer.LookPath(filepath.Join(sbinPath, "ip6tables-nft-save"))
+	haveIPTablesNFT := iptablesNFTSave != "" || ip6tablesNFTSave != ""
+
+	if haveIPTablesNFT && !haveIPTablesLegacy {
+		return NFTMode, nil
+	} else if haveIPTablesLegacy && !haveIPTablesNFT {
+		return LegacyMode, nil
+	} else if !haveIPTablesLegacy && !haveIPTablesNFT {
+		return UnknownMode, fmt.Errorf("could not find any iptables binaries")
+	}
+
 	// In kubernetes 1.17 and later, kubelet will have created at least
 	// one chain in the "mangle" table (either "KUBE-IPTABLES-HINT" or
 	// "KUBE-KUBELET-CANARY"), so check that first, against
 	// iptables-nft, because we can check that more efficiently and
 	// it's more common these days.
-	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-nft-save", "-t", "mangle") {
+	if iptablesNFTSave != "" && execAndScanForKubeletChains(ctx, execer, iptablesNFTSave, "-t", "mangle") {
 		return NFTMode, nil
 	}
-	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-nft-save", "-t", "mangle") {
+	if ip6tablesNFTSave != "" && execAndScanForKubeletChains(ctx, execer, ip6tablesNFTSave, "-t", "mangle") {
 		return NFTMode, nil
 	}
 
@@ -60,10 +76,10 @@ func DetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
 	// can't pass "-t mangle" to iptables-legacy-save because it would
 	// cause the kernel to create that table if it didn't already
 	// exist, which we don't want. So we have to grab all the rules.
-	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-legacy-save") {
+	if iptablesLegacySave != "" && execAndScanForKubeletChains(ctx, execer, iptablesLegacySave) {
 		return LegacyMode, nil
 	}
-	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-legacy-save") {
+	if ip6tablesLegacySave != "" && execAndScanForKubeletChains(ctx, execer, ip6tablesLegacySave) {
 		return LegacyMode, nil
 	}
 
@@ -75,8 +91,8 @@ func DetectMode(ctx context.Context, execer utilexec.Interface) (Mode, error) {
 // using CombinedOutput() or something simple like that that might end up using a lot of
 // memory, we stream the command output, only keeping a line at a time, and stop as soon
 // as we find a match.
-func execAndScanForKubeletChains(ctx context.Context, execer utilexec.Interface, sbinPath, command string, args ...string) bool {
-	cmd := execer.CommandContext(ctx, filepath.Join(sbinPath, command), args...)
+func execAndScanForKubeletChains(ctx context.Context, execer utilexec.Interface, command string, args ...string) bool {
+	cmd := execer.CommandContext(ctx, command, args...)
 	stdout, _ := cmd.StdoutPipe()
 	if err := cmd.Start(); err != nil {
 		return false
