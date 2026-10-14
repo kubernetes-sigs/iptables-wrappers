@@ -28,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	utilwait "k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	utilexec "k8s.io/utils/exec"
 	utiltrace "k8s.io/utils/trace"
@@ -408,63 +407,6 @@ func (runner *runner) checkRule(args []string) (bool, error) {
 		}
 	}
 	return false, fmt.Errorf("error checking rule: %v: %s", err, out)
-}
-
-const (
-	// Max time we wait for an iptables flush to complete after we notice it has started
-	iptablesFlushTimeout = 5 * time.Second
-	// How often we poll while waiting for an iptables flush to complete
-	iptablesFlushPollTime = 100 * time.Millisecond
-)
-
-// Monitor is part of Interface
-func (runner *runner) Monitor(canary Chain, tables []Table, reloadFunc func(), interval time.Duration, stopCh <-chan struct{}) {
-	for {
-		_ = utilwait.PollImmediateUntil(interval, func() (bool, error) {
-			for _, table := range tables {
-				if _, err := runner.EnsureChain(table, canary); err != nil {
-					klog.ErrorS(err, "Could not set up iptables canary", "table", table, "chain", canary)
-					return false, nil
-				}
-			}
-			return true, nil
-		}, stopCh)
-
-		// Poll until stopCh is closed or iptables is flushed
-		err := utilwait.PollUntil(interval, func() (bool, error) {
-			if exists, err := runner.ChainExists(tables[0], canary); exists {
-				return false, nil
-			} else if isResourceError(err) {
-				klog.ErrorS(err, "Could not check for iptables canary", "table", tables[0], "chain", canary)
-				return false, nil
-			}
-			klog.V(2).InfoS("IPTables canary deleted", "table", tables[0], "chain", canary)
-			// Wait for the other canaries to be deleted too before returning
-			// so we don't start reloading too soon.
-			err := utilwait.PollImmediate(iptablesFlushPollTime, iptablesFlushTimeout, func() (bool, error) {
-				for i := 1; i < len(tables); i++ {
-					if exists, err := runner.ChainExists(tables[i], canary); exists || isResourceError(err) {
-						return false, nil
-					}
-				}
-				return true, nil
-			})
-			if err != nil {
-				klog.InfoS("Inconsistent iptables state detected")
-			}
-			return true, nil
-		}, stopCh)
-		if err != nil {
-			// stopCh was closed
-			for _, table := range tables {
-				_ = runner.DeleteChain(table, canary)
-			}
-			return
-		}
-
-		klog.V(2).InfoS("Reloading after iptables flush")
-		reloadFunc()
-	}
 }
 
 // ChainExists is part of Interface
