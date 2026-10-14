@@ -182,22 +182,22 @@ func (mfc *monitorFakeCmd) Stop() {
 
 func TestIPTablesMonitor(t *testing.T) {
 	mfe := newMonitorFakeExec()
-	ipt, err := newInternal(mfe, ProtocolIPv4)
+	ipt, err := newInternal(t.Context(), mfe, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
 
 	var reloads uint32
-	stopCh := make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
 
 	canary := Chain("MONITOR-TEST-CANARY")
 	tables := []Table{TableMangle, TableFilter, TableNAT}
-	go ipt.Monitor(canary, tables, func() {
+	go ipt.Monitor(ctx, canary, tables, func() {
 		if !ensureNoChains(mfe) {
 			t.Errorf("reload called while canaries still exist")
 		}
 		atomic.AddUint32(&reloads, 1)
-	}, 100*time.Millisecond, stopCh)
+	}, 100*time.Millisecond)
 
 	// Monitor should create canary chains quickly
 	if err := waitForChains(mfe, canary, tables); err != nil {
@@ -209,9 +209,9 @@ func TestIPTablesMonitor(t *testing.T) {
 	}
 
 	// If we delete all of the chains, it should reload
-	_ = ipt.DeleteChain(TableMangle, canary)
-	_ = ipt.DeleteChain(TableFilter, canary)
-	_ = ipt.DeleteChain(TableNAT, canary)
+	_ = ipt.DeleteChain(t.Context(), TableMangle, canary)
+	_ = ipt.DeleteChain(t.Context(), TableFilter, canary)
+	_ = ipt.DeleteChain(t.Context(), TableNAT, canary)
 
 	if err := waitForReloads(&reloads, 1); err != nil {
 		t.Errorf("got unexpected number of reloads after flush: %v", err)
@@ -221,8 +221,8 @@ func TestIPTablesMonitor(t *testing.T) {
 	}
 
 	// If we delete two chains, it should not reload yet
-	_ = ipt.DeleteChain(TableMangle, canary)
-	_ = ipt.DeleteChain(TableFilter, canary)
+	_ = ipt.DeleteChain(t.Context(), TableMangle, canary)
+	_ = ipt.DeleteChain(t.Context(), TableFilter, canary)
 
 	if err := waitForNoReload(&reloads, 1); err != nil {
 		t.Errorf("got unexpected number of reloads after partial flush: %v", err)
@@ -232,7 +232,7 @@ func TestIPTablesMonitor(t *testing.T) {
 	// delete the last chain. The monitor should not reload, because it can't actually
 	// tell if the chain was deleted or not.
 	mfe.blockIPTables(true)
-	_ = ipt.DeleteChain(TableNAT, canary)
+	_ = ipt.DeleteChain(t.Context(), TableNAT, canary)
 	if err := waitForBlocked(mfe); err != nil {
 		t.Errorf("failed waiting for monitor to be blocked from monitoring: %v", err)
 	}
@@ -247,8 +247,8 @@ func TestIPTablesMonitor(t *testing.T) {
 		t.Errorf("failed to create iptables canaries: %v", err)
 	}
 
-	// If we close the stop channel, it should stop running
-	close(stopCh)
+	// If we cancel the context, it should stop running
+	cancel()
 
 	if err := waitForNoReload(&reloads, 2); err != nil {
 		t.Errorf("got unexpected number of reloads after stop: %v", err)
@@ -260,15 +260,15 @@ func TestIPTablesMonitor(t *testing.T) {
 	// If we create a new monitor while the iptables lock is held, it will
 	// retry creating canaries until it succeeds
 
-	stopCh = make(chan struct{})
+	ctx, cancel = context.WithCancel(t.Context())
 	_ = mfe.getWasBlocked()
 	mfe.blockIPTables(true)
-	go ipt.Monitor(canary, tables, func() {
+	go ipt.Monitor(ctx, canary, tables, func() {
 		if !ensureNoChains(mfe) {
 			t.Errorf("reload called while canaries still exist")
 		}
 		atomic.AddUint32(&reloads, 1)
-	}, 100*time.Millisecond, stopCh)
+	}, 100*time.Millisecond)
 
 	// Monitor should not have created canaries yet
 	if !ensureNoChains(mfe) {
@@ -284,7 +284,7 @@ func TestIPTablesMonitor(t *testing.T) {
 		t.Errorf("failed to create iptables canaries: %v", err)
 	}
 
-	close(stopCh)
+	cancel()
 }
 
 func pollImmediate(interval, timeout time.Duration, condition func() (done bool, err error)) error {

@@ -42,25 +42,25 @@ type Interface interface {
 	Protocol() Protocol
 
 	// EnsureChain checks if the specified chain exists and, if not, creates it.  If the chain existed, return true.
-	EnsureChain(table Table, chain Chain) (bool, error)
+	EnsureChain(ctx context.Context, table Table, chain Chain) (bool, error)
 	// FlushChain clears the specified chain.  If the chain did not exist, return error.
-	FlushChain(table Table, chain Chain) error
+	FlushChain(ctx context.Context, table Table, chain Chain) error
 	// DeleteChain deletes the specified chain.  If the chain did not exist, return error.
-	DeleteChain(table Table, chain Chain) error
+	DeleteChain(ctx context.Context, table Table, chain Chain) error
 	// ChainExists tests whether the specified chain exists, returning an error if it
 	// does not, or if it is unable to check.
-	ChainExists(table Table, chain Chain) (bool, error)
+	ChainExists(ctx context.Context, table Table, chain Chain) (bool, error)
 
 	// EnsureRule checks if the specified rule is present and, if not, creates it.  If the rule existed, return true.
-	EnsureRule(position RulePosition, table Table, chain Chain, args ...string) (bool, error)
+	EnsureRule(ctx context.Context, position RulePosition, table Table, chain Chain, args ...string) (bool, error)
 	// DeleteRule checks if the specified rule is present and, if so, deletes it.
-	DeleteRule(table Table, chain Chain, args ...string) error
+	DeleteRule(ctx context.Context, table Table, chain Chain, args ...string) error
 
 	// SaveInto calls `iptables-save` for table and stores result in a given buffer.
-	SaveInto(table Table, buffer *bytes.Buffer) error
+	SaveInto(ctx context.Context, table Table, buffer *bytes.Buffer) error
 	// Restore runs `iptables-restore` passing data through []byte.
 	// data should be formatted like the output of SaveInto()
-	Restore(data []byte) error
+	Restore(ctx context.Context, data []byte) error
 
 	// Monitor detects when the given iptables tables have been flushed by an external
 	// tool (e.g. a firewall reload) by creating canary chains and polling to see if
@@ -72,7 +72,7 @@ type Interface interface {
 	// rules. If it is unable to create the canary chains (either initially or after
 	// a reload) it will log an error and stop monitoring.
 	// (This function should be called from a goroutine.)
-	Monitor(canary Chain, tables []Table, reloadFunc func(), interval time.Duration, stopCh <-chan struct{})
+	Monitor(ctx context.Context, canary Chain, tables []Table, reloadFunc func(), interval time.Duration)
 }
 
 // RulePosition holds the -I/-A flags for iptable
@@ -145,12 +145,12 @@ type runner struct {
 }
 
 // newInternal returns a new Interface which will exec iptables
-func newInternal(exec utilexec.Interface, protocol Protocol) (*runner, error) {
+func newInternal(ctx context.Context, exec utilexec.Interface, protocol Protocol) (*runner, error) {
 	ipt := &runner{
 		exec:     exec,
 		protocol: protocol,
 	}
-	if _, err := ipt.ChainExists(TableNAT, ChainPostrouting); err != nil {
+	if _, err := ipt.ChainExists(ctx, TableNAT, ChainPostrouting); err != nil {
 		return nil, err
 	}
 	return ipt, nil
@@ -158,16 +158,16 @@ func newInternal(exec utilexec.Interface, protocol Protocol) (*runner, error) {
 
 // New returns a new Interface which will exec iptables. If the necessary iptables binary
 // is not present or doesn't work, this will return an error.
-func New(protocol Protocol) (Interface, error) {
-	return newInternal(utilexec.New(), protocol)
+func New(ctx context.Context, protocol Protocol) (Interface, error) {
+	return newInternal(ctx, utilexec.New(), protocol)
 }
 
-func newDualStackInternal(exec utilexec.Interface) map[Protocol]Interface {
+func newDualStackInternal(ctx context.Context, exec utilexec.Interface) map[Protocol]Interface {
 	interfaces := map[Protocol]Interface{}
-	if ipt, err := newInternal(exec, ProtocolIPv4); err == nil {
+	if ipt, err := newInternal(ctx, exec, ProtocolIPv4); err == nil {
 		interfaces[ProtocolIPv4] = ipt
 	}
-	if ipt, err := newInternal(exec, ProtocolIPv6); err == nil {
+	if ipt, err := newInternal(ctx, exec, ProtocolIPv6); err == nil {
 		interfaces[ProtocolIPv6] = ipt
 	}
 	return interfaces
@@ -178,8 +178,8 @@ func newDualStackInternal(exec utilexec.Interface) map[Protocol]Interface {
 // supported, then it just returns an empty map. This function is intended to make things
 // simple for callers that just want "best-effort" iptables support, where neither partial
 // nor complete lack of iptables support is considered an error.
-func NewBestEffort() map[Protocol]Interface {
-	return newDualStackInternal(utilexec.New())
+func NewBestEffort(ctx context.Context) map[Protocol]Interface {
+	return newDualStackInternal(ctx, utilexec.New())
 }
 
 // IsIPv6 is part of Interface.
@@ -193,10 +193,10 @@ func (ipt *runner) Protocol() Protocol {
 }
 
 // EnsureChain is part of Interface.
-func (ipt *runner) EnsureChain(table Table, chain Chain) (bool, error) {
+func (ipt *runner) EnsureChain(ctx context.Context, table Table, chain Chain) (bool, error) {
 	fullArgs := makeFullArgs(table, chain)
 
-	out, err := ipt.run(opCreateChain, fullArgs)
+	out, err := ipt.run(ctx, opCreateChain, fullArgs)
 	if err != nil {
 		if ee, ok := errors.AsType[utilexec.ExitError](err); ok {
 			if ee.Exited() && ee.ExitStatus() == 1 {
@@ -209,10 +209,10 @@ func (ipt *runner) EnsureChain(table Table, chain Chain) (bool, error) {
 }
 
 // FlushChain is part of Interface.
-func (ipt *runner) FlushChain(table Table, chain Chain) error {
+func (ipt *runner) FlushChain(ctx context.Context, table Table, chain Chain) error {
 	fullArgs := makeFullArgs(table, chain)
 
-	out, err := ipt.run(opFlushChain, fullArgs)
+	out, err := ipt.run(ctx, opFlushChain, fullArgs)
 	if err != nil {
 		return fmt.Errorf("error flushing chain %q: %w: %s", chain, err, out)
 	}
@@ -220,10 +220,10 @@ func (ipt *runner) FlushChain(table Table, chain Chain) error {
 }
 
 // DeleteChain is part of Interface.
-func (ipt *runner) DeleteChain(table Table, chain Chain) error {
+func (ipt *runner) DeleteChain(ctx context.Context, table Table, chain Chain) error {
 	fullArgs := makeFullArgs(table, chain)
 
-	out, err := ipt.run(opDeleteChain, fullArgs)
+	out, err := ipt.run(ctx, opDeleteChain, fullArgs)
 	if err != nil {
 		return fmt.Errorf("error deleting chain %q: %w: %s", chain, err, out)
 	}
@@ -231,13 +231,13 @@ func (ipt *runner) DeleteChain(table Table, chain Chain) error {
 }
 
 // ChainExists is part of Interface
-func (ipt *runner) ChainExists(table Table, chain Chain) (bool, error) {
+func (ipt *runner) ChainExists(ctx context.Context, table Table, chain Chain) (bool, error) {
 	fullArgs := makeFullArgs(table, chain)
 
 	trace := utiltrace.New("iptables ChainExists")
 	defer trace.LogIfLong(2 * time.Second)
 
-	out, err := ipt.run(opListChain, fullArgs)
+	out, err := ipt.run(ctx, opListChain, fullArgs)
 	if err != nil {
 		return false, fmt.Errorf("error listing chain %q in table %q: %w: %s", chain, table, err, out)
 	}
@@ -245,17 +245,17 @@ func (ipt *runner) ChainExists(table Table, chain Chain) (bool, error) {
 }
 
 // EnsureRule is part of Interface.
-func (ipt *runner) EnsureRule(position RulePosition, table Table, chain Chain, args ...string) (bool, error) {
+func (ipt *runner) EnsureRule(ctx context.Context, position RulePosition, table Table, chain Chain, args ...string) (bool, error) {
 	fullArgs := makeFullArgs(table, chain, args...)
 
-	exists, err := ipt.checkRule(fullArgs)
+	exists, err := ipt.checkRule(ctx, fullArgs)
 	if err != nil {
 		return false, err
 	}
 	if exists {
 		return true, nil
 	}
-	out, err := ipt.run(operation(position), fullArgs)
+	out, err := ipt.run(ctx, operation(position), fullArgs)
 	if err != nil {
 		return false, fmt.Errorf("error appending rule: %w: %s", err, out)
 	}
@@ -263,17 +263,17 @@ func (ipt *runner) EnsureRule(position RulePosition, table Table, chain Chain, a
 }
 
 // DeleteRule is part of Interface.
-func (ipt *runner) DeleteRule(table Table, chain Chain, args ...string) error {
+func (ipt *runner) DeleteRule(ctx context.Context, table Table, chain Chain, args ...string) error {
 	fullArgs := makeFullArgs(table, chain, args...)
 
-	exists, err := ipt.checkRule(fullArgs)
+	exists, err := ipt.checkRule(ctx, fullArgs)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
-	out, err := ipt.run(opDeleteRule, fullArgs)
+	out, err := ipt.run(ctx, opDeleteRule, fullArgs)
 	if err != nil {
 		return fmt.Errorf("error deleting rule: %w: %s", err, out)
 	}
@@ -281,7 +281,7 @@ func (ipt *runner) DeleteRule(table Table, chain Chain, args ...string) error {
 }
 
 // SaveInto is part of Interface.
-func (ipt *runner) SaveInto(table Table, buffer *bytes.Buffer) error {
+func (ipt *runner) SaveInto(ctx context.Context, table Table, buffer *bytes.Buffer) error {
 	trace := utiltrace.New("iptables save")
 	defer trace.LogIfLong(2 * time.Second)
 
@@ -302,7 +302,7 @@ func (ipt *runner) SaveInto(table Table, buffer *bytes.Buffer) error {
 }
 
 // Restore is part of Interface.
-func (ipt *runner) Restore(data []byte) error {
+func (ipt *runner) Restore(ctx context.Context, data []byte) error {
 	trace := utiltrace.New("iptables restore")
 	defer trace.LogIfLong(2 * time.Second)
 
@@ -310,7 +310,7 @@ func (ipt *runner) Restore(data []byte) error {
 	args := []string{"--noflush", waitString, waitSecondsValue}
 	iptablesRestoreCmd := iptablesRestoreCommand(ipt.protocol)
 	klog.V(4).InfoS("Running", "command", iptablesRestoreCmd, "arguments", args)
-	cmd := ipt.exec.Command(iptablesRestoreCmd, args...)
+	cmd := ipt.exec.CommandContext(ctx, iptablesRestoreCmd, args...)
 	cmd.SetStdin(bytes.NewBuffer(data))
 	b, err := cmd.CombinedOutput()
 	if err != nil {
@@ -344,11 +344,7 @@ func iptablesCommand(protocol Protocol) string {
 	return cmdIPTables
 }
 
-func (ipt *runner) run(op operation, args []string) ([]byte, error) {
-	return ipt.runContext(context.TODO(), op, args)
-}
-
-func (ipt *runner) runContext(ctx context.Context, op operation, args []string) ([]byte, error) {
+func (ipt *runner) run(ctx context.Context, op operation, args []string) ([]byte, error) {
 	iptablesCmd := iptablesCommand(ipt.protocol)
 	fullArgs := append([]string{waitString, waitSecondsValue, string(op)}, args...)
 	klog.V(5).InfoS("Running", "command", iptablesCmd, "arguments", fullArgs)
@@ -361,11 +357,11 @@ func (ipt *runner) runContext(ctx context.Context, op operation, args []string) 
 
 // Returns (bool, nil) if it was able to check the existence of the rule, or
 // (<undefined>, error) if the process of checking failed.
-func (ipt *runner) checkRule(args []string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+func (ipt *runner) checkRule(ctx context.Context, args []string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	out, err := ipt.runContext(ctx, opCheckRule, args)
+	out, err := ipt.run(ctx, opCheckRule, args)
 	if ctx.Err() == context.DeadlineExceeded {
 		return false, fmt.Errorf("timed out while checking rules")
 	}

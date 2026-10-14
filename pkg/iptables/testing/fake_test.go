@@ -32,7 +32,7 @@ func TestFakeIPTables(t *testing.T) {
 	fake := NewFake()
 	buf := bytes.NewBuffer(nil)
 
-	err := fake.SaveInto("", buf)
+	err := fake.SaveInto(t.Context(), "", buf)
 	if err != nil {
 		t.Fatalf("unexpected error from SaveInto: %v", err)
 	}
@@ -56,19 +56,19 @@ func TestFakeIPTables(t *testing.T) {
 	}
 
 	// EnsureChain
-	existed, err := fake.EnsureChain(iptables.Table("blah"), iptables.Chain("KUBE-TEST"))
+	existed, err := fake.EnsureChain(t.Context(), iptables.Table("blah"), iptables.Chain("KUBE-TEST"))
 	if err == nil {
 		t.Errorf("did not get expected error creating chain in non-existent table")
 	} else if existed {
 		t.Errorf("wrong return value from EnsureChain with non-existent table")
 	}
-	existed, err = fake.EnsureChain(iptables.TableNAT, iptables.Chain("KUBE-TEST"))
+	existed, err = fake.EnsureChain(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST"))
 	if err != nil {
 		t.Errorf("unexpected error creating chain: %v", err)
 	} else if existed {
 		t.Errorf("wrong return value from EnsureChain with non-existent chain")
 	}
-	existed, err = fake.EnsureChain(iptables.TableNAT, iptables.Chain("KUBE-TEST"))
+	existed, err = fake.EnsureChain(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST"))
 	if err != nil {
 		t.Errorf("unexpected error creating chain: %v", err)
 	} else if !existed {
@@ -76,13 +76,13 @@ func TestFakeIPTables(t *testing.T) {
 	}
 
 	// ChainExists
-	exists, err := fake.ChainExists(iptables.TableNAT, iptables.Chain("KUBE-TEST"))
+	exists, err := fake.ChainExists(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST"))
 	if err != nil {
 		t.Errorf("unexpected error checking chain: %v", err)
 	} else if !exists {
 		t.Errorf("wrong return value from ChainExists with existing chain")
 	}
-	exists, err = fake.ChainExists(iptables.TableNAT, iptables.Chain("KUBE-TEST-NOT"))
+	exists, err = fake.ChainExists(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST-NOT"))
 	if err != nil {
 		t.Errorf("unexpected error checking chain: %v", err)
 	} else if exists {
@@ -90,31 +90,31 @@ func TestFakeIPTables(t *testing.T) {
 	}
 
 	// EnsureRule
-	existed, err = fake.EnsureRule(iptables.Append, iptables.Table("blah"), iptables.Chain("KUBE-TEST"), "-j", "ACCEPT")
+	existed, err = fake.EnsureRule(t.Context(), iptables.Append, iptables.Table("blah"), iptables.Chain("KUBE-TEST"), "-j", "ACCEPT")
 	if err == nil {
 		t.Errorf("did not get expected error creating rule in non-existent table")
 	} else if existed {
 		t.Errorf("wrong return value from EnsureRule with non-existent table")
 	}
-	existed, err = fake.EnsureRule(iptables.Append, iptables.TableNAT, iptables.Chain("KUBE-TEST-NOT"), "-j", "ACCEPT")
+	existed, err = fake.EnsureRule(t.Context(), iptables.Append, iptables.TableNAT, iptables.Chain("KUBE-TEST-NOT"), "-j", "ACCEPT")
 	if err == nil {
 		t.Errorf("did not get expected error creating rule in non-existent chain")
 	} else if existed {
 		t.Errorf("wrong return value from EnsureRule with non-existent chain")
 	}
-	existed, err = fake.EnsureRule(iptables.Append, iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "ACCEPT")
+	existed, err = fake.EnsureRule(t.Context(), iptables.Append, iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "ACCEPT")
 	if err != nil {
 		t.Errorf("unexpected error creating rule: %v", err)
 	} else if existed {
 		t.Errorf("wrong return value from EnsureRule with non-existent rule")
 	}
-	existed, err = fake.EnsureRule(iptables.Prepend, iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROP")
+	existed, err = fake.EnsureRule(t.Context(), iptables.Prepend, iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROP")
 	if err != nil {
 		t.Errorf("unexpected error creating rule: %v", err)
 	} else if existed {
 		t.Errorf("wrong return value from EnsureRule with non-existent rule")
 	}
-	existed, err = fake.EnsureRule(iptables.Append, iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROP")
+	existed, err = fake.EnsureRule(t.Context(), iptables.Append, iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROP")
 	if err != nil {
 		t.Errorf("unexpected error creating rule: %v", err)
 	} else if !existed {
@@ -123,7 +123,7 @@ func TestFakeIPTables(t *testing.T) {
 
 	// Sanity-check...
 	buf.Reset()
-	err = fake.SaveInto("", buf)
+	err = fake.SaveInto(t.Context(), "", buf)
 	if err != nil {
 		t.Fatalf("unexpected error from SaveInto: %v", err)
 	}
@@ -150,19 +150,19 @@ func TestFakeIPTables(t *testing.T) {
 	}
 
 	// DeleteRule
-	err = fake.DeleteRule(iptables.Table("blah"), iptables.Chain("KUBE-TEST"), "-j", "DROP")
+	err = fake.DeleteRule(t.Context(), iptables.Table("blah"), iptables.Chain("KUBE-TEST"), "-j", "DROP")
 	if err == nil {
 		t.Errorf("did not get expected error deleting rule in non-existent table")
 	}
-	err = fake.DeleteRule(iptables.TableNAT, iptables.Chain("KUBE-TEST-NOT"), "-j", "DROP")
+	err = fake.DeleteRule(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST-NOT"), "-j", "DROP")
 	if err == nil {
 		t.Errorf("did not get expected error deleting rule in non-existent chain")
 	}
-	err = fake.DeleteRule(iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROPLET")
+	err = fake.DeleteRule(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROPLET")
 	if err != nil {
 		t.Errorf("unexpected error deleting non-existent rule: %v", err)
 	}
-	err = fake.DeleteRule(iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROP")
+	err = fake.DeleteRule(t.Context(), iptables.TableNAT, iptables.Chain("KUBE-TEST"), "-j", "DROP")
 	if err != nil {
 		t.Errorf("unexpected error deleting rule: %v", err)
 	}
@@ -180,14 +180,14 @@ func TestFakeIPTables(t *testing.T) {
 		-A KUBE-MISC-TWO -j ACCEPT
 		COMMIT
 		`, "\n"))
-	err = fake.Restore([]byte(rules))
+	err = fake.Restore(t.Context(), []byte(rules))
 	if err != nil {
 		t.Fatalf("unexpected error from Restore: %v", err)
 	}
 
 	// This should leave KUBE-TEST unchanged
 	buf.Reset()
-	err = fake.SaveInto("", buf)
+	err = fake.SaveInto(t.Context(), "", buf)
 	if err != nil {
 		t.Fatalf("unexpected error from SaveInto: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestFakeIPTables(t *testing.T) {
 		-X KUBE-MISC-TWO
 		COMMIT
 		`, "\n"))
-	err = fake.Restore([]byte(rules))
+	err = fake.Restore(t.Context(), []byte(rules))
 	if err == nil || !strings.Contains(err.Error(), "referenced by existing rules") {
 		t.Fatalf("Expected 'referenced by existing rules' error from Restore, got %v", err)
 	}
@@ -239,7 +239,7 @@ func TestFakeIPTables(t *testing.T) {
 		-A KUBE-MISC-TWO -j KUBE-MISC-THREE
 		COMMIT
 		`, "\n"))
-	err = fake.Restore([]byte(rules))
+	err = fake.Restore(t.Context(), []byte(rules))
 	if err == nil || !strings.Contains(err.Error(), "non-existent chain") {
 		t.Fatalf("Expected 'non-existent chain' error from Restore, got %v", err)
 	}
@@ -253,13 +253,13 @@ func TestFakeIPTables(t *testing.T) {
 		-X KUBE-RESTORED
 		COMMIT
 		`, "\n"))
-	err = fake.Restore([]byte(rules))
+	err = fake.Restore(t.Context(), []byte(rules))
 	if err != nil {
 		t.Fatalf("unexpected error from Restore: %v", err)
 	}
 
 	buf.Reset()
-	err = fake.SaveInto("", buf)
+	err = fake.SaveInto(t.Context(), "", buf)
 	if err != nil {
 		t.Fatalf("unexpected error from SaveInto: %v", err)
 	}
@@ -310,13 +310,13 @@ func TestFakeIPTables(t *testing.T) {
 		-A KUBE-NEW-CHAIN -d 172.30.0.3 -j DNAT --to-destination 10.0.0.3
 		COMMIT
 		`, "\n"))
-	err = fake.Restore([]byte(rules))
+	err = fake.Restore(t.Context(), []byte(rules))
 	if err != nil {
 		t.Fatalf("unexpected error from RestoreAll: %v", err)
 	}
 
 	buf.Reset()
-	err = fake.SaveInto("", buf)
+	err = fake.SaveInto(t.Context(), "", buf)
 	if err != nil {
 		t.Fatalf("unexpected error from SaveInto: %v", err)
 	}

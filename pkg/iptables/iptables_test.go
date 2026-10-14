@@ -163,7 +163,7 @@ func TestNewDualStack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForCommands(tc.commands)
-			runners := newDualStackInternal(fexec)
+			runners := newDualStackInternal(t.Context(), fexec)
 
 			if tc.ipv4 && runners[ProtocolIPv4] == nil {
 				t.Errorf("Expected ipv4 runner, got nil")
@@ -199,12 +199,12 @@ func testEnsureChain(t *testing.T, protocol Protocol) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, protocol)
+	runner, err := newInternal(t.Context(), fexec, protocol)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
 	// Success.
-	exists, err := runner.EnsureChain(TableNAT, Chain("FOOBAR"))
+	exists, err := runner.EnsureChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err != nil {
 		t.Errorf("%s new chain: Expected success, got %v", protocol, err)
 	}
@@ -220,7 +220,7 @@ func testEnsureChain(t *testing.T, protocol Protocol) {
 		t.Errorf("%s new chain: Expected cmd containing '%s -t nat -N FOOBAR', got %s", protocol, cmd, fcmd.CombinedOutputLog[numCalls-1])
 	}
 	// Exists.
-	exists, err = runner.EnsureChain(TableNAT, Chain("FOOBAR"))
+	exists, err = runner.EnsureChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err != nil {
 		t.Errorf("%s existing chain: Expected success, got %v", protocol, err)
 	}
@@ -228,7 +228,7 @@ func testEnsureChain(t *testing.T, protocol Protocol) {
 		t.Errorf("%s existing chain: Expected exists = true", protocol)
 	}
 	// Simulate failure.
-	_, err = runner.EnsureChain(TableNAT, Chain("FOOBAR"))
+	_, err = runner.EnsureChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err == nil {
 		t.Errorf("%s: Expected failure", protocol)
 	}
@@ -260,12 +260,12 @@ func TestFlushChain(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
 	// Success.
-	err = runner.FlushChain(TableNAT, Chain("FOOBAR"))
+	err = runner.FlushChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err != nil {
 		t.Errorf("expected success, got %v", err)
 	}
@@ -277,7 +277,7 @@ func TestFlushChain(t *testing.T) {
 		t.Errorf("wrong CombinedOutput() log, got %s", fcmd.CombinedOutputLog[numCalls-1])
 	}
 	// Failure.
-	err = runner.FlushChain(TableNAT, Chain("FOOBAR"))
+	err = runner.FlushChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err == nil {
 		t.Errorf("expected failure")
 	}
@@ -301,12 +301,12 @@ func TestDeleteChain(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
 	// Success.
-	err = runner.DeleteChain(TableNAT, Chain("FOOBAR"))
+	err = runner.DeleteChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err != nil {
 		t.Errorf("expected success, got %v", err)
 	}
@@ -318,7 +318,7 @@ func TestDeleteChain(t *testing.T) {
 		t.Errorf("wrong CombinedOutput() log, got %s", fcmd.CombinedOutputLog[numCalls-1])
 	}
 	// Failure.
-	err = runner.DeleteChain(TableNAT, Chain("FOOBAR"))
+	err = runner.DeleteChain(t.Context(), TableNAT, Chain("FOOBAR"))
 	if err == nil {
 		t.Errorf("expected failure")
 	}
@@ -339,11 +339,11 @@ func TestEnsureRuleAlreadyExists(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	exists, err := runner.EnsureRule(Append, TableNAT, ChainOutput, "abc", "123")
+	exists, err := runner.EnsureRule(t.Context(), Append, TableNAT, ChainOutput, "abc", "123")
 	if err != nil {
 		t.Errorf("expected success, got %v", err)
 	}
@@ -377,11 +377,11 @@ func TestEnsureRuleNew(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	exists, err := runner.EnsureRule(Append, TableNAT, ChainOutput, "abc", "123")
+	exists, err := runner.EnsureRule(t.Context(), Append, TableNAT, ChainOutput, "abc", "123")
 	if err != nil {
 		t.Errorf("expected success, got %v", err)
 	}
@@ -412,11 +412,11 @@ func TestEnsureRuleErrorChecking(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	_, err = runner.EnsureRule(Append, TableNAT, ChainOutput, "abc", "123")
+	_, err = runner.EnsureRule(t.Context(), Append, TableNAT, ChainOutput, "abc", "123")
 	if err == nil {
 		t.Errorf("expected failure")
 	}
@@ -444,11 +444,11 @@ func TestEnsureRuleErrorCreating(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	_, err = runner.EnsureRule(Append, TableNAT, ChainOutput, "abc", "123")
+	_, err = runner.EnsureRule(t.Context(), Append, TableNAT, ChainOutput, "abc", "123")
 	if err == nil {
 		t.Errorf("expected failure")
 	}
@@ -473,11 +473,11 @@ func TestDeleteRuleDoesNotExist(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	err = runner.DeleteRule(TableNAT, ChainOutput, "abc", "123")
+	err = runner.DeleteRule(t.Context(), TableNAT, ChainOutput, "abc", "123")
 	if err != nil {
 		t.Errorf("expected success, got %v", err)
 	}
@@ -508,11 +508,11 @@ func TestDeleteRuleExists(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	err = runner.DeleteRule(TableNAT, ChainOutput, "abc", "123")
+	err = runner.DeleteRule(t.Context(), TableNAT, ChainOutput, "abc", "123")
 	if err != nil {
 		t.Errorf("expected success, got %v", err)
 	}
@@ -540,11 +540,11 @@ func TestDeleteRuleErrorChecking(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	err = runner.DeleteRule(TableNAT, ChainOutput, "abc", "123")
+	err = runner.DeleteRule(t.Context(), TableNAT, ChainOutput, "abc", "123")
 	if err == nil {
 		t.Errorf("expected failure")
 	}
@@ -572,11 +572,11 @@ func TestDeleteRuleErrorDeleting(t *testing.T) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, ProtocolIPv4)
+	runner, err := newInternal(t.Context(), fexec, ProtocolIPv4)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
-	err = runner.DeleteRule(TableNAT, ChainOutput, "abc", "123")
+	err = runner.DeleteRule(t.Context(), TableNAT, ChainOutput, "abc", "123")
 	if err == nil {
 		t.Errorf("expected failure")
 	}
@@ -646,14 +646,14 @@ COMMIT
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, protocol)
+	runner, err := newInternal(t.Context(), fexec, protocol)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
 	buffer := bytes.NewBuffer(nil)
 
 	// Success.
-	err = runner.SaveInto(TableNAT, buffer)
+	err = runner.SaveInto(t.Context(), TableNAT, buffer)
 	if err != nil {
 		t.Fatalf("%s: Expected success, got %v", protocol, err)
 	}
@@ -676,7 +676,7 @@ COMMIT
 
 	// Failure.
 	buffer.Reset()
-	err = runner.SaveInto(TableNAT, buffer)
+	err = runner.SaveInto(t.Context(), TableNAT, buffer)
 	if err == nil {
 		t.Errorf("%s: Expected failure", protocol)
 	}
@@ -711,13 +711,13 @@ func testRestore(t *testing.T, protocol Protocol) {
 			func(cmd string, args ...string) exec.Cmd { return fakeexec.InitFakeCmd(&fcmd, cmd, args...) },
 		},
 	}
-	runner, err := newInternal(fexec, protocol)
+	runner, err := newInternal(t.Context(), fexec, protocol)
 	if err != nil {
 		t.Fatalf("Failed to create iptables runner: %v", err)
 	}
 	numCalls := 1
 
-	err = runner.Restore([]byte{})
+	err = runner.Restore(t.Context(), []byte{})
 	if err != nil {
 		t.Errorf("%s: Expected success, got %v", protocol, err)
 	}
@@ -729,7 +729,7 @@ func testRestore(t *testing.T, protocol Protocol) {
 	}
 
 	// Failure.
-	err = runner.Restore([]byte{})
+	err = runner.Restore(t.Context(), []byte{})
 	if err == nil {
 		t.Errorf("%s Expected a failure", protocol)
 	}

@@ -19,6 +19,7 @@ limitations under the License.
 package iptables
 
 import (
+	"context"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -33,16 +34,16 @@ const (
 
 type monitor struct {
 	ipt        *runner
+	ctx        context.Context
 	canary     Chain
 	tables     []Table
 	reloadFunc func()
 	interval   time.Duration
-	stopCh     <-chan struct{}
 }
 
 // Monitor is part of Interface
-func (ipt *runner) Monitor(canary Chain, tables []Table, reloadFunc func(), interval time.Duration, stopCh <-chan struct{}) {
-	mon := &monitor{ipt, canary, tables, reloadFunc, interval, stopCh}
+func (ipt *runner) Monitor(ctx context.Context, canary Chain, tables []Table, reloadFunc func(), interval time.Duration) {
+	mon := &monitor{ipt, ctx, canary, tables, reloadFunc, interval}
 	mon.run()
 }
 
@@ -84,7 +85,7 @@ func (mon *monitor) ensureCanaries() {
 		}
 		failed := false
 		for _, table := range mon.tables {
-			if _, err := mon.ipt.EnsureChain(table, mon.canary); err != nil {
+			if _, err := mon.ipt.EnsureChain(mon.ctx, table, mon.canary); err != nil {
 				klog.ErrorS(err, "Could not set up iptables canary", "table", table, "chain", mon.canary)
 				failed = true
 				break
@@ -99,7 +100,7 @@ func (mon *monitor) ensureCanaries() {
 }
 
 func (mon *monitor) primaryCanaryDeleted() bool {
-	exists, err := mon.ipt.ChainExists(mon.tables[0], mon.canary)
+	exists, err := mon.ipt.ChainExists(mon.ctx, mon.tables[0], mon.canary)
 	if isResourceError(err) {
 		klog.ErrorS(err, "Could not check for iptables canary", "table", mon.tables[0], "chain", mon.canary)
 		// If the check failed, then probably trying to reload right now would
@@ -111,7 +112,7 @@ func (mon *monitor) primaryCanaryDeleted() bool {
 
 func (mon *monitor) allCanariesDeleted() bool {
 	for _, table := range mon.tables {
-		if exists, err := mon.ipt.ChainExists(table, mon.canary); exists || isResourceError(err) {
+		if exists, err := mon.ipt.ChainExists(mon.ctx, table, mon.canary); exists || isResourceError(err) {
 			return false
 		}
 	}
@@ -120,15 +121,11 @@ func (mon *monitor) allCanariesDeleted() bool {
 
 func (mon *monitor) cleanupCanaries() {
 	for _, table := range mon.tables {
-		_ = mon.ipt.DeleteChain(table, mon.canary)
+		// We intentionally don't use mon.ctx here, because it may be cancelled.
+		_ = mon.ipt.DeleteChain(context.Background(), table, mon.canary)
 	}
 }
 
 func (mon *monitor) isStopped() bool {
-	select {
-	case <-mon.stopCh:
-		return true
-	default:
-		return false
-	}
+	return mon.ctx.Err() != nil
 }
