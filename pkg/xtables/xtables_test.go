@@ -32,26 +32,12 @@ type mewTestCommand struct {
 func TestExecWrapper(t *testing.T) {
 	testCases := []struct {
 		name          string
-		setupCommands []testCommand
-		testCommands  []mewTestCommand
 		mode          Mode
+		testCommands  []mewTestCommand
 	}{
 		{
 			name: "legacy mode",
-			setupCommands: []testCommand{
-				{
-					command: "/sbin/iptables-nft-save -t mangle",
-					stdout:  "",
-				},
-				{
-					command: "/sbin/ip6tables-nft-save -t mangle",
-					stdout:  "",
-				},
-				{
-					command: "/sbin/iptables-legacy-save",
-					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
-				},
-			},
+			mode: LegacyMode,
 			testCommands: []mewTestCommand{
 				{
 					original:    "iptables -N FOO",
@@ -85,12 +71,7 @@ func TestExecWrapper(t *testing.T) {
 		},
 		{
 			name: "nft mode",
-			setupCommands: []testCommand{
-				{
-					command: "/sbin/iptables-nft-save -t mangle",
-					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
-				},
-			},
+			mode: NFTMode,
 			testCommands: []mewTestCommand{
 				{
 					original:    "iptables -N FOO",
@@ -127,11 +108,8 @@ func TestExecWrapper(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			unDetectMode()
-			fexec := fakeExecForCommands(tc.setupCommands, "")
-			xt, err := NewExecWrapper(t.Context(), fexec)
-			if err != nil {
-				t.Errorf("Unexpected error creating ExecWrapper")
-			}
+			fexec := fakeExecForCommands(nil, "")
+			xt := NewExecWrapper(fexec, tc.mode)
 
 			for _, command := range tc.testCommands {
 				fcmd := fakeexec.FakeCmd{
