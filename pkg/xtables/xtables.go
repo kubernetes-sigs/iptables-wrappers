@@ -47,7 +47,7 @@ func MultiBinaryPath(sbinPath string, mode Mode) string {
 }
 
 // ExecWrapper wraps a utilexec.Interface and reimplements it with support for rewriting
-// iptables commands to always use the system Mode.
+// iptables commands to always use a particular mode.
 type ExecWrapper struct {
 	execer   utilexec.Interface
 	mappings map[string]string
@@ -55,17 +55,11 @@ type ExecWrapper struct {
 
 var _ utilexec.Interface = &ExecWrapper{}
 
-// NewExecWrapper detects the system iptables mode and creates an ExecWrapper that uses it.
-func NewExecWrapper(ctx context.Context, execer utilexec.Interface) (*ExecWrapper, error) {
-	sbinDir, err := DetectBinaryDir(execer)
-	if err != nil {
-		return nil, err
-	}
+// NewExecWrapper returns an ExecWrapper that uses the given iptables mode
+func NewExecWrapper(execer utilexec.Interface, mode Mode) *ExecWrapper {
+	// If DetectBinaryDir fails and returns "", filepath.Join() will just ignore it.
+	sbinDir, _ := DetectBinaryDir(execer)
 
-	mode, err := DetectMode(ctx, execer)
-	if err != nil {
-		return nil, err
-	}
 	mappings := map[string]string{}
 	for _, binary := range IPTablesBinaries {
 		mapped := filepath.Join(sbinDir, strings.Replace(binary, "tables", "tables-"+string(mode), 1))
@@ -77,7 +71,7 @@ func NewExecWrapper(ctx context.Context, execer utilexec.Interface) (*ExecWrappe
 	return &ExecWrapper{
 		execer:   execer,
 		mappings: mappings,
-	}, nil
+	}
 }
 
 func (mew *ExecWrapper) mapCommand(cmd string) string {
