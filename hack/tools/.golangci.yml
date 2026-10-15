@@ -29,6 +29,10 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - unparam
 formatters:
   enable:
     - gofmt
