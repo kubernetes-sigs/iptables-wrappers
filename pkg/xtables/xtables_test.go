@@ -126,7 +126,7 @@ func TestExecWrapper(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fexec := fakeExecForCommands(tc.setupCommands)
+			fexec := fakeExecForCommands(tc.setupCommands, "")
 			xt, err := NewExecWrapper(t.Context(), fexec)
 			if err != nil {
 				t.Errorf("Unexpected error creating ExecWrapper")
