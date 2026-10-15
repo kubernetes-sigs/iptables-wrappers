@@ -109,6 +109,7 @@ func TestDetectMode(t *testing.T) {
 		name     string
 		commands []testCommand
 		mode     Mode
+		err      bool
 	}{
 		{
 			name: "iptables broken",
@@ -131,6 +132,7 @@ func TestDetectMode(t *testing.T) {
 				},
 			},
 			mode: NFTMode,
+			err:  true,
 		},
 		{
 			name: "no rules",
@@ -153,6 +155,7 @@ func TestDetectMode(t *testing.T) {
 				},
 			},
 			mode: NFTMode,
+			err:  true,
 		},
 		{
 			name: "old legacy rules",
@@ -298,9 +301,14 @@ func TestDetectMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForCommands(tc.commands)
 
-			mode := DetectMode(t.Context(), fexec, "/sbin")
+			mode, err := DetectMode(t.Context(), fexec, "/sbin")
 			if mode != tc.mode {
 				t.Errorf("Expected mode %q got %q", tc.mode, mode)
+			}
+			if err != nil && !tc.err {
+				t.Errorf("Expected no error, but got %v", err)
+			} else if err == nil && tc.err {
+				t.Errorf("Expected an error, but didn't get one")
 			}
 		})
 	}
@@ -361,9 +369,14 @@ func Test_execAndScanForKubeletChains(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForReader(tc.buf)
-			mode := DetectMode(t.Context(), fexec, "/sbin")
+			mode, err := DetectMode(t.Context(), fexec, "/sbin")
 			if mode != NFTMode {
 				t.Errorf("Expected mode %q got %q", NFTMode, mode)
+			}
+			if err != nil && !tc.expectEOF {
+				t.Errorf("Expected no error, but got %v", err)
+			} else if err == nil && tc.expectEOF {
+				t.Errorf("Expected an error, but didn't get one")
 			}
 
 			reachedEOF := tc.buf.Len() == 0

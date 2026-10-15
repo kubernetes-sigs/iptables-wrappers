@@ -62,7 +62,10 @@ func NewExecWrapper(ctx context.Context, execer utilexec.Interface) (*ExecWrappe
 		return nil, err
 	}
 
-	mode := DetectMode(ctx, execer, sbinDir)
+	mode, err := DetectMode(ctx, execer, sbinDir)
+	if err != nil {
+		return nil, err
+	}
 	mappings := map[string]string{}
 	for _, binary := range IPTablesBinaries {
 		mapped := filepath.Join(sbinDir, strings.Replace(binary, "tables", "tables-"+string(mode), 1))

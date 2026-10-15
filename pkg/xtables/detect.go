@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -35,24 +36,20 @@ func DetectBinaryDir(execer utilexec.Interface) (string, error) {
 	}
 }
 
-// DetectMode inspects the current iptables entries and tries to
-// guess which iptables mode is being used: legacy or nft
-func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string) Mode {
-	// This method ignores all errors, this is on purpose. We execute all commands
-	// and try to detect patterns in a best effort basis. If somthing fails,
-	// continue with the next step. Worse case scenario if everything fails,
-	// default to nft.
-
+// DetectMode returns the best guess about the current iptables mode. If it is unable to
+// make a guess, it will return an error (though it will also return a default value for
+// the mode in that case, so you can just ignore the error).
+func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string) (Mode, error) {
 	// In kubernetes 1.17 and later, kubelet will have created at least
 	// one chain in the "mangle" table (either "KUBE-IPTABLES-HINT" or
 	// "KUBE-KUBELET-CANARY"), so check that first, against
 	// iptables-nft, because we can check that more efficiently and
 	// it's more common these days.
 	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-nft-save", "-t", "mangle") {
-		return NFTMode
+		return NFTMode, nil
 	}
 	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-nft-save", "-t", "mangle") {
-		return NFTMode
+		return NFTMode, nil
 	}
 
 	// Check for kubernetes 1.17-or-later with iptables-legacy. We
@@ -60,14 +57,14 @@ func DetectMode(ctx context.Context, execer utilexec.Interface, sbinPath string)
 	// cause the kernel to create that table if it didn't already
 	// exist, which we don't want. So we have to grab all the rules.
 	if execAndScanForKubeletChains(ctx, execer, sbinPath, "iptables-legacy-save") {
-		return LegacyMode
+		return LegacyMode, nil
 	}
 	if execAndScanForKubeletChains(ctx, execer, sbinPath, "ip6tables-legacy-save") {
-		return LegacyMode
+		return LegacyMode, nil
 	}
 
-	// If we can't detect either of the patterns, default to nft.
-	return NFTMode
+	// If we don't recognize any rules, default to nft.
+	return NFTMode, fmt.Errorf("unable to determine system iptables mode; could not find any kubelet iptables chains")
 }
 
 // Especially on a restart, there may already be lots of iptables rules, so rather than
