@@ -32,6 +32,8 @@ import (
 	"k8s.io/klog/v2"
 	utilexec "k8s.io/utils/exec"
 	utiltrace "k8s.io/utils/trace"
+
+	"sigs.k8s.io/iptables-wrappers/pkg/xtables"
 )
 
 // Interface is an injectable interface for running iptables commands.  Implementations must be goroutine-safe.
@@ -74,6 +76,31 @@ type Interface interface {
 	// (This function should be called from a goroutine.)
 	Monitor(ctx context.Context, canary Chain, tables []Table, reloadFunc func(), interval time.Duration)
 }
+
+// Mode defines how to use the different iptables modes
+type Mode string
+
+const (
+	// UseInstalledMode means to just use the "iptables", etc, binaries directly,
+	// assuming that they are already linked to the correct mode-specific binary. Use
+	// this (a) in uncontainerized binaries like kubelet or CNI plugins that want to
+	// just use the system iptables mode, or (b) in pod-network pods that just want to
+	// use the iptables binary from their container image and don't need to care what
+	// anyone else is doing.
+	UseInstalledMode Mode = "installed"
+
+	// DetectHostMode means to use xtables.DetectMode to detect whether kubelet has
+	// created rules using LegacyMode or NFTMode. Use this in host-network pods.
+	DetectHostMode Mode = "detect"
+
+	// LegacyMode means to use "iptables-legacy", etc (regardless of whether that's
+	// what anybody else is using).
+	LegacyMode Mode = Mode(xtables.LegacyMode)
+
+	// NFTMode means to use "iptables-nft", etc (regardless of whether that's what
+	// anybody else is using).
+	NFTMode Mode = Mode(xtables.NFTMode)
+)
 
 // RulePosition holds the -I/-A flags for iptable
 type RulePosition string
@@ -144,6 +171,24 @@ type runner struct {
 	protocol Protocol
 }
 
+// newIPTablesExec returns a utilexec.Interface for mode
+func newIPTablesExec(ctx context.Context, mode Mode) utilexec.Interface {
+	exec := utilexec.New()
+	switch mode {
+	case UseInstalledMode:
+		return exec
+	case DetectHostMode:
+		if hostMode, err := xtables.DetectMode(ctx, exec); err == nil {
+			return xtables.NewExecWrapper(exec, hostMode)
+		} else {
+			// Ignore the guessed hostMode and just fall back to UseInstalledMode.
+			return exec
+		}
+	default:
+		return xtables.NewExecWrapper(exec, xtables.Mode(mode))
+	}
+}
+
 // newInternal returns a new Interface which will exec iptables
 func newInternal(ctx context.Context, exec utilexec.Interface, protocol Protocol) (*runner, error) {
 	ipt := &runner{
@@ -157,9 +202,11 @@ func newInternal(ctx context.Context, exec utilexec.Interface, protocol Protocol
 }
 
 // New returns a new Interface which will exec iptables. If the necessary iptables binary
-// is not present or doesn't work, this will return an error.
-func New(ctx context.Context, protocol Protocol) (Interface, error) {
-	return newInternal(ctx, utilexec.New(), protocol)
+// is not present or doesn't work, this will return an error. For processes running in
+// host-network pods, mode should be `DetectHostMode`. For most other cases, it should
+// be `UseInstalledMode`. (See the `Mode` documentation.)
+func New(ctx context.Context, protocol Protocol, mode Mode) (Interface, error) {
+	return newInternal(ctx, newIPTablesExec(ctx, mode), protocol)
 }
 
 func newDualStackInternal(ctx context.Context, exec utilexec.Interface) map[Protocol]Interface {
@@ -178,8 +225,8 @@ func newDualStackInternal(ctx context.Context, exec utilexec.Interface) map[Prot
 // supported, then it just returns an empty map. This function is intended to make things
 // simple for callers that just want "best-effort" iptables support, where neither partial
 // nor complete lack of iptables support is considered an error.
-func NewBestEffort(ctx context.Context) map[Protocol]Interface {
-	return newDualStackInternal(ctx, utilexec.New())
+func NewBestEffort(ctx context.Context, mode Mode) map[Protocol]Interface {
+	return newDualStackInternal(ctx, newIPTablesExec(ctx, mode))
 }
 
 // IsIPv6 is part of Interface.
