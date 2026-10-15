@@ -74,20 +74,33 @@ type testCommand struct {
 	err     error
 }
 
+func makeFakeLookPathFunc(notFoundStr string) func(string) (string, error) {
+	return func(cmd string) (string, error) {
+		if notFoundStr != "" && strings.Contains(cmd, notFoundStr) {
+			// The test case wants us to not find binaries containing this string.
+			return "", fmt.Errorf("%q: not found", cmd)
+		} else if strings.HasPrefix(cmd, "/sbin/") || strings.HasPrefix(cmd, "/bin") {
+			// If asked explicitly if something is in /sbin or /bin, always
+			// say yes.
+			return cmd, nil
+		} else if strings.Contains(cmd, "/") {
+			// Otherwise, if given a complete path, say it's not found.
+			return "", fmt.Errorf("%q: not found", cmd)
+		} else {
+			// Otherwise, if given just a binary name, say it's in /bin.
+			// (xtables never explicitly looks for anything in /bin, so if we
+			// see that, we know this case was hit.)
+			return "/bin/" + cmd, nil
+		}
+	}
+}
+
 // Creates a FakeExec that expects exactly commands to be run (and will fail otherwise).
-func fakeExecForCommands(commands []testCommand) *fakeexec.FakeExec {
+func fakeExecForCommands(commands []testCommand, notFoundStr string) *fakeexec.FakeExec {
 	fexec := &fakeexec.FakeExec{
 		CommandScript: make([]fakeexec.FakeCommandAction, len(commands)),
 		ExactOrder:    true,
-		LookPathFunc: func(cmd string) (string, error) {
-			if strings.HasPrefix(cmd, "/sbin/") {
-				return cmd, nil
-			} else if strings.Contains(cmd, "/") {
-				return "", fmt.Errorf("%q: not found", cmd)
-			} else {
-				return "/sbin/" + cmd, nil
-			}
-		},
+		LookPathFunc:  makeFakeLookPathFunc(notFoundStr),
 	}
 	for i := range commands {
 		fcmd := fakeexec.FakeCmd{
@@ -106,10 +119,11 @@ func fakeExecForCommands(commands []testCommand) *fakeexec.FakeExec {
 
 func TestDetectMode(t *testing.T) {
 	testCases := []struct {
-		name     string
-		commands []testCommand
-		mode     Mode
-		err      bool
+		name        string
+		notFoundStr string
+		commands    []testCommand
+		mode        Mode
+		err         bool
 	}{
 		{
 			name: "iptables broken",
@@ -299,7 +313,7 @@ func TestDetectMode(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fexec := fakeExecForCommands(tc.commands)
+			fexec := fakeExecForCommands(tc.commands, tc.notFoundStr)
 
 			mode, err := DetectMode(t.Context(), fexec, "/sbin")
 			if mode != tc.mode {
@@ -315,7 +329,10 @@ func TestDetectMode(t *testing.T) {
 }
 
 func fakeExecForReader(reader io.Reader) *fakeexec.FakeExec {
-	fexec := &fakeexec.FakeExec{CommandScript: make([]fakeexec.FakeCommandAction, 4)}
+	fexec := &fakeexec.FakeExec{
+		CommandScript: make([]fakeexec.FakeCommandAction, 4),
+		LookPathFunc:  makeFakeLookPathFunc(""),
+	}
 	// DetectMode runs up to 4 iptables commands; we use reader only for the first
 	for i := range 4 {
 		var rc io.ReadCloser
