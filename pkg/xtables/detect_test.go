@@ -130,7 +130,7 @@ func TestDetectMode(t *testing.T) {
 					err:     fmt.Errorf("oh noes!"),
 				},
 			},
-			mode: NFTMode,
+			mode: UnknownMode,
 		},
 		{
 			name: "no rules",
@@ -152,7 +152,7 @@ func TestDetectMode(t *testing.T) {
 					stdout:  "",
 				},
 			},
-			mode: NFTMode,
+			mode: UnknownMode,
 		},
 		{
 			name: "old legacy rules",
@@ -298,9 +298,15 @@ func TestDetectMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fexec := fakeExecForCommands(tc.commands)
 
-			mode := DetectMode(t.Context(), fexec, "/sbin")
+			mode, err := DetectMode(t.Context(), fexec, "/sbin")
 			if mode != tc.mode {
 				t.Errorf("Expected mode %q got %q", tc.mode, mode)
+			}
+			expectErr := tc.mode == UnknownMode
+			if err != nil && !expectErr {
+				t.Errorf("Expected no error, but got %v", err)
+			} else if err == nil && expectErr {
+				t.Errorf("Expected an error, but didn't get one")
 			}
 		})
 	}
@@ -329,49 +335,47 @@ func fakeExecForReader(reader io.Reader) *fakeexec.FakeExec {
 }
 
 func Test_execAndScanForKubeletChains(t *testing.T) {
-	matching := &bytes.Buffer{}
-	nonMatching := &bytes.Buffer{}
-	for matching.Len() < 16384 {
-		_, _ = matching.WriteString(rulesWithoutIPTablesHint)
-		_, _ = nonMatching.WriteString(rulesWithoutIPTablesHint)
-	}
-	// Write the block with the hint only to matching
-	_, _ = matching.WriteString(rulesWithIPTablesHint)
-	for matching.Len() < 65536 {
-		_, _ = matching.WriteString(rulesWithoutIPTablesHint)
-		_, _ = nonMatching.WriteString(rulesWithoutIPTablesHint)
-	}
+	t.Run("DetectMode stops before EOF on a match", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		for buf.Len() < 16384 {
+			_, _ = buf.WriteString(rulesWithoutIPTablesHint)
+		}
+		// Add matching rules
+		_, _ = buf.WriteString(rulesWithIPTablesHint)
+		for buf.Len() < 65536 {
+			_, _ = buf.WriteString(rulesWithoutIPTablesHint)
+		}
 
-	testCases := []struct {
-		name      string
-		buf       *bytes.Buffer
-		expectEOF bool
-	}{
-		{
-			name:      "DetectMode stops before EOF on a match",
-			buf:       matching,
-			expectEOF: false,
-		},
-		{
-			name:      "DetectMode reads to EOF when no match",
-			buf:       nonMatching,
-			expectEOF: true,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			fexec := fakeExecForReader(tc.buf)
-			mode := DetectMode(t.Context(), fexec, "/sbin")
-			if mode != NFTMode {
-				t.Errorf("Expected mode %q got %q", NFTMode, mode)
-			}
+		fexec := fakeExecForReader(buf)
+		mode, err := DetectMode(t.Context(), fexec, "/sbin")
+		if mode != NFTMode {
+			t.Errorf("Expected mode %q got %q", NFTMode, mode)
+		}
+		if err != nil {
+			t.Errorf("Expected no error, but got %v", err)
+		}
+		if buf.Len() == 0 {
+			t.Errorf("read all of the input despite matching data")
+		}
+	})
 
-			reachedEOF := tc.buf.Len() == 0
-			if tc.expectEOF && !reachedEOF {
-				t.Errorf("failed to read all input with non-matching data")
-			} else if !tc.expectEOF && reachedEOF {
-				t.Errorf("read all of the input despite matching data")
-			}
-		})
-	}
+	t.Run("DetectMode reads to EOF when no match", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		// No matching rules in this case
+		for buf.Len() < 65536 {
+			_, _ = buf.WriteString(rulesWithoutIPTablesHint)
+		}
+
+		fexec := fakeExecForReader(buf)
+		mode, err := DetectMode(t.Context(), fexec, "/sbin")
+		if mode != UnknownMode {
+			t.Errorf("Expected mode %q got %q", UnknownMode, mode)
+		}
+		if err == nil {
+			t.Errorf("Expected an error, but didn't get one")
+		}
+		if buf.Len() != 0 {
+			t.Errorf("failed to read all input with non-matching data")
+		}
+	})
 }
