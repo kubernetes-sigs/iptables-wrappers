@@ -7,7 +7,7 @@ $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 build: $(BIN_DIR)
-	CGO_ENABLED=0 $(GO) build -ldflags='-s -w -extldflags="-static" -buildid=""' -trimpath -o $(BIN_DIR)/iptables-wrapper sigs.k8s.io/iptables-wrappers
+	CGO_ENABLED=0 $(GO) build -ldflags='-s -w -extldflags="-static" -buildid=""' -trimpath -o $(BIN_DIR)/iptables-wrapper sigs.k8s.io/iptables-wrappers/cmd/iptables-wrapper
 
 clean:
 	rm -f $(BIN_DIR)/iptables-wrapper
