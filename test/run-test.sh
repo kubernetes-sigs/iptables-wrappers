@@ -23,32 +23,6 @@ if [[ -n "${DEBUG:-}" ]]; then
     dash_x="-x"
 fi
 
-build_arg=""
-build_fail=0
-nft_fail=0
-
-while [[ $# -gt 1 ]]; do
-    case "$1" in
-	--build-arg=*)
-	    build_arg="${1#--build_arg=}"
-	    ;;
-	--build-arg)
-	    shift
-	    build_arg="$1"
-	    ;;
-	--build-fail)
-	    build_fail=1
-	    ;;
-	--nft-fail)
-	    nft_fail=1
-	    ;;
-	*)
-	    echo "Unrecognized flag '$1'" 1>&2
-	    exit 1
-	    ;;
-    esac
-    shift
-done
 tag="$1"
 
 if podman -h &> /dev/null; then
@@ -98,10 +72,7 @@ function FAIL() {
     exit 1
 }
 
-if ! build "${tag}" ${build_arg}; then
-    if [[ "${build_fail}" = 1 ]]; then
-	PASS "build failed as expected"
-    fi
+if ! build "${tag}"; then
     FAIL "build failed unexpectedly"
 fi
 
