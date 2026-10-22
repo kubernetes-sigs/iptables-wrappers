@@ -18,9 +18,12 @@ package xtables
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	utilexec "k8s.io/utils/exec"
@@ -74,20 +77,33 @@ type testCommand struct {
 	err     error
 }
 
+func makeFakeLookPathFunc(notFoundStr string) func(string) (string, error) {
+	return func(cmd string) (string, error) {
+		if notFoundStr != "" && strings.Contains(cmd, notFoundStr) {
+			// The test case wants us to not find binaries containing this string.
+			return "", fmt.Errorf("%q: not found", cmd)
+		} else if strings.HasPrefix(cmd, "/sbin/") || strings.HasPrefix(cmd, "/bin") {
+			// If asked explicitly if something is in /sbin or /bin, always
+			// say yes.
+			return cmd, nil
+		} else if strings.Contains(cmd, "/") {
+			// Otherwise, if given a complete path, say it's not found.
+			return "", fmt.Errorf("%q: not found", cmd)
+		} else {
+			// Otherwise, if given just a binary name, say it's in /bin.
+			// (xtables never explicitly looks for anything in /bin, so if we
+			// see that, we know this case was hit.)
+			return "/bin/" + cmd, nil
+		}
+	}
+}
+
 // Creates a FakeExec that expects exactly commands to be run (and will fail otherwise).
-func fakeExecForCommands(commands []testCommand) *fakeexec.FakeExec {
+func fakeExecForCommands(commands []testCommand, notFoundStr string) *fakeexec.FakeExec {
 	fexec := &fakeexec.FakeExec{
 		CommandScript: make([]fakeexec.FakeCommandAction, len(commands)),
 		ExactOrder:    true,
-		LookPathFunc: func(cmd string) (string, error) {
-			if strings.HasPrefix(cmd, "/sbin/") {
-				return cmd, nil
-			} else if strings.Contains(cmd, "/") {
-				return "", fmt.Errorf("%q: not found", cmd)
-			} else {
-				return "/sbin/" + cmd, nil
-			}
-		},
+		LookPathFunc:  makeFakeLookPathFunc(notFoundStr),
 	}
 	for i := range commands {
 		fcmd := fakeexec.FakeCmd{
@@ -104,11 +120,12 @@ func fakeExecForCommands(commands []testCommand) *fakeexec.FakeExec {
 	return fexec
 }
 
-func TestDetectMode(t *testing.T) {
+func Test_realDetectMode(t *testing.T) {
 	testCases := []struct {
-		name     string
-		commands []testCommand
-		mode     Mode
+		name        string
+		notFoundStr string
+		commands    []testCommand
+		mode        Mode
 	}{
 		{
 			name: "iptables broken",
@@ -130,7 +147,7 @@ func TestDetectMode(t *testing.T) {
 					err:     fmt.Errorf("oh noes!"),
 				},
 			},
-			mode: NFTMode,
+			mode: UnknownMode,
 		},
 		{
 			name: "no rules",
@@ -152,7 +169,7 @@ func TestDetectMode(t *testing.T) {
 					stdout:  "",
 				},
 			},
-			mode: NFTMode,
+			mode: UnknownMode,
 		},
 		{
 			name: "old legacy rules",
@@ -292,22 +309,195 @@ func TestDetectMode(t *testing.T) {
 			},
 			mode: LegacyMode,
 		},
+		{
+			name:        "Can't detect sbindir",
+			notFoundStr: "/sbin",
+			commands: []testCommand{
+				{
+					// Our LookPathFunc will end up claiming the binaries
+					// exist in /bin in this case.
+					command: "/bin/iptables-nft-save -t mangle",
+					stdout:  "",
+				},
+				{
+					command: "/bin/ip6tables-nft-save -t mangle",
+					stdout:  "",
+				},
+				{
+					command: "/bin/iptables-legacy-save",
+					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+				},
+			},
+			mode: LegacyMode,
+		},
+		{
+			name:        "No binaries present",
+			notFoundStr: "tables",
+			commands:    []testCommand{},
+			mode:        UnknownMode,
+		},
+		{
+			name:        "Only nft binaries present",
+			notFoundStr: "legacy",
+			commands:    []testCommand{},
+			mode:        NFTMode,
+		},
+		{
+			name:        "Only legacy binaries present",
+			notFoundStr: "nft",
+			commands:    []testCommand{},
+			mode:        LegacyMode,
+		},
+		{
+			name:        "Only IPv4 binaries present",
+			notFoundStr: "ip6tables",
+			commands: []testCommand{
+				{
+					command: "/sbin/iptables-nft-save -t mangle",
+					stdout:  "",
+				},
+				{
+					command: "/sbin/iptables-legacy-save",
+					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+				},
+			},
+			mode: LegacyMode,
+		},
+		{
+			name:        "Only IPv6 binaries present",
+			notFoundStr: "iptables-",
+			commands: []testCommand{
+				{
+					command: "/sbin/ip6tables-nft-save -t mangle",
+					stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+				},
+			},
+			mode: NFTMode,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fexec := fakeExecForCommands(tc.commands)
+			fexec := fakeExecForCommands(tc.commands, tc.notFoundStr)
 
-			mode := DetectMode(t.Context(), fexec, "/sbin")
+			mode, err := realDetectMode(t.Context(), fexec)
 			if mode != tc.mode {
 				t.Errorf("Expected mode %q got %q", tc.mode, mode)
+			}
+			expectErr := tc.mode == UnknownMode
+			if err != nil && !expectErr {
+				t.Errorf("Expected no error, but got %v", err)
+			} else if err == nil && expectErr {
+				t.Errorf("Expected an error, but didn't get one")
 			}
 		})
 	}
 }
 
+func TestDetectModeParallel(t *testing.T) {
+	commands := []testCommand{
+		{
+			command: "/sbin/iptables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/ip6tables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/iptables-legacy-save",
+			stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+		},
+	}
+
+	unDetectMode()
+
+	var fexecs [10]*fakeexec.FakeExec
+	var modes [10]Mode
+	for i := range fexecs {
+		fexecs[i] = fakeExecForCommands(commands, "")
+	}
+	wg := sync.WaitGroup{}
+	for i := range modes {
+		wg.Go(func() { modes[i], _ = DetectMode(t.Context(), fexecs[i]) })
+	}
+	wg.Wait()
+
+	foundExec := false
+	for i := range 10 {
+		if modes[i] != LegacyMode {
+			t.Errorf("Expected call %d to DetectMode to return %q, got %q", i+1, LegacyMode, modes[i])
+		}
+		if fexecs[i].CommandCalls == 3 {
+			t.Logf("DetectMode call %d executed iptables", i)
+			if foundExec {
+				t.Errorf("Multiple DetectMode calls executed iptables")
+			}
+			foundExec = true
+		} else if fexecs[i].CommandCalls != 0 {
+			t.Errorf("DetectMode call %d executed %d iptables commands", i, fexecs[i].CommandCalls)
+		}
+	}
+	if !foundExec {
+		t.Errorf("No DetectMode call executed iptables")
+	}
+}
+
+func TestDetectModeCancel(t *testing.T) {
+	nftCommands := []testCommand{
+		{
+			command: "/sbin/iptables-nft-save -t mangle",
+			stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+		},
+	}
+	legacyCommands := []testCommand{
+		{
+			command: "/sbin/iptables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/ip6tables-nft-save -t mangle",
+			stdout:  "",
+		},
+		{
+			command: "/sbin/iptables-legacy-save",
+			stdout:  ":KUBE-IPTABLES-HINT - [0:0]\n",
+		},
+	}
+
+	unDetectMode()
+
+	// Try detecting with a pre-cancelled context.
+	// NB: FakeExec ignores ctx, so we have to actually pass commands that will result
+	// in NFTMode being picked. But DetectMode() itself will notice the cancelled
+	// context after realDetectMode() returns and not update detectedMode.
+	fexec := fakeExecForCommands(nftCommands, "")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	mode, err := DetectMode(ctx, fexec)
+	if mode != NFTMode {
+		t.Errorf("Expected cancelled DetectMode call to return %s, got %s", NFTMode, mode)
+	}
+	if !errors.Is(err, ctx.Err()) {
+		t.Errorf("Expected cancelled DetectMode to return wrapped error %T %q, got %T %q", ctx.Err(), ctx.Err().Error(), err, err.Error())
+	}
+
+	// Try again; should re-run realDetectMode with the new commands.
+	fexec = fakeExecForCommands(legacyCommands, "")
+	mode, err = DetectMode(t.Context(), fexec)
+	if mode != LegacyMode {
+		t.Errorf("Expected call to DetectMode after cancelled call to return %s, got %s", LegacyMode, mode)
+	}
+	if err != nil {
+		t.Errorf("Expected no error but got %v", err)
+	}
+}
+
 func fakeExecForReader(reader io.Reader) *fakeexec.FakeExec {
-	fexec := &fakeexec.FakeExec{CommandScript: make([]fakeexec.FakeCommandAction, 4)}
+	fexec := &fakeexec.FakeExec{
+		CommandScript: make([]fakeexec.FakeCommandAction, 4),
+		LookPathFunc:  makeFakeLookPathFunc(""),
+	}
 	// DetectMode runs up to 4 iptables commands; we use reader only for the first
 	for i := range 4 {
 		var rc io.ReadCloser
@@ -329,49 +519,47 @@ func fakeExecForReader(reader io.Reader) *fakeexec.FakeExec {
 }
 
 func Test_execAndScanForKubeletChains(t *testing.T) {
-	matching := &bytes.Buffer{}
-	nonMatching := &bytes.Buffer{}
-	for matching.Len() < 16384 {
-		_, _ = matching.WriteString(rulesWithoutIPTablesHint)
-		_, _ = nonMatching.WriteString(rulesWithoutIPTablesHint)
-	}
-	// Write the block with the hint only to matching
-	_, _ = matching.WriteString(rulesWithIPTablesHint)
-	for matching.Len() < 65536 {
-		_, _ = matching.WriteString(rulesWithoutIPTablesHint)
-		_, _ = nonMatching.WriteString(rulesWithoutIPTablesHint)
-	}
+	t.Run("DetectMode stops before EOF on a match", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		for buf.Len() < 16384 {
+			_, _ = buf.WriteString(rulesWithoutIPTablesHint)
+		}
+		// Add matching rules
+		_, _ = buf.WriteString(rulesWithIPTablesHint)
+		for buf.Len() < 65536 {
+			_, _ = buf.WriteString(rulesWithoutIPTablesHint)
+		}
 
-	testCases := []struct {
-		name      string
-		buf       *bytes.Buffer
-		expectEOF bool
-	}{
-		{
-			name:      "DetectMode stops before EOF on a match",
-			buf:       matching,
-			expectEOF: false,
-		},
-		{
-			name:      "DetectMode reads to EOF when no match",
-			buf:       nonMatching,
-			expectEOF: true,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			fexec := fakeExecForReader(tc.buf)
-			mode := DetectMode(t.Context(), fexec, "/sbin")
-			if mode != NFTMode {
-				t.Errorf("Expected mode %q got %q", NFTMode, mode)
-			}
+		fexec := fakeExecForReader(buf)
+		mode, err := realDetectMode(t.Context(), fexec)
+		if mode != NFTMode {
+			t.Errorf("Expected mode %q got %q", NFTMode, mode)
+		}
+		if err != nil {
+			t.Errorf("Expected no error, but got %v", err)
+		}
+		if buf.Len() == 0 {
+			t.Errorf("read all of the input despite matching data")
+		}
+	})
 
-			reachedEOF := tc.buf.Len() == 0
-			if tc.expectEOF && !reachedEOF {
-				t.Errorf("failed to read all input with non-matching data")
-			} else if !tc.expectEOF && reachedEOF {
-				t.Errorf("read all of the input despite matching data")
-			}
-		})
-	}
+	t.Run("DetectMode reads to EOF when no match", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		// No matching rules in this case
+		for buf.Len() < 65536 {
+			_, _ = buf.WriteString(rulesWithoutIPTablesHint)
+		}
+
+		fexec := fakeExecForReader(buf)
+		mode, err := realDetectMode(t.Context(), fexec)
+		if mode != UnknownMode {
+			t.Errorf("Expected mode %q got %q", UnknownMode, mode)
+		}
+		if err == nil {
+			t.Errorf("Expected an error, but didn't get one")
+		}
+		if buf.Len() != 0 {
+			t.Errorf("failed to read all input with non-matching data")
+		}
+	})
 }
