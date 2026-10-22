@@ -72,6 +72,14 @@ function FAIL() {
     exit 1
 }
 
+for mod in ip_tables nf_tables; do
+    if ! lsmod | grep -q "${mod}"; then
+        if ! sudo modprobe "${mod}"; then
+            FAIL "test requires host support for both legacy and nft iptables"
+        fi
+    fi
+done
+
 if ! build "${tag}"; then
     FAIL "build failed unexpectedly"
 fi
