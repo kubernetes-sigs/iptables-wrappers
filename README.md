@@ -72,9 +72,9 @@ namespace:
     etc, symlinks manually.)
 
 While there are no actual "releases" of iptables-wrappers, you can use
-the [`v3`] tag if you want a known-good version of the binary.
+the [`v4`] tag if you want a known-good version of the binary.
 
-[`v3`]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v3
+[`v4`]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v3
 
 The first time the wrapper is run, it will figure out which mode the
 system is using, update the `iptables`, `iptables-save`, etc, links to
@@ -85,10 +85,10 @@ directly to the correct underlying binary.
 
 `iptables-wrapper` has no dependencies on anything other than the
 iptables binaries themselves, to help you keep your image as small as
-possible.
-https://github.com/kubernetes/release/blob/master/images/build/distroless-iptables/
-is one example of installing Debian iptables binaries on a
-"distroless" base image.
+possible. The kubernetes [`distroless-iptables`] image is one example
+of installing Debian iptables binaries on a "distroless" base image.
+
+[`distroless-iptables`]: https://github.com/kubernetes/release/tree/v0.22.0/images/build/distroless-iptables
 
 Some distro-specific installation examples:
 
