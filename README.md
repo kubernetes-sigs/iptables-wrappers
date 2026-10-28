@@ -74,7 +74,7 @@ namespace:
 While there are no actual "releases" of iptables-wrappers, you can use
 the [`v4`] tag if you want a known-good version of the binary.
 
-[`v4`]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v3
+[`v4`]: https://github.com/kubernetes-sigs/iptables-wrappers/tree/v4
 
 The first time the wrapper is run, it will figure out which mode the
 system is using, update the `iptables`, `iptables-save`, etc, links to
@@ -144,3 +144,5 @@ object, `xtables.ExecWrapper` that implements `exec.Interface` from
 iptables-related binaries to use a particular mode. This is used
 internally by `pkg/iptables`, but could also be used independently.
 
+See [CHANGELOG.md](./CHANGELOG.md) for information about vendor-able
+version numbers.
